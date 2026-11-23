@@ -259,18 +259,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn fit(&self, text: &str, width: f32) -> String {
-        if self.text_width(text) <= width {
-            return text.to_string();
-        }
-        let mut out = String::new();
-        for c in text.chars() {
-            out.push(c);
-            if self.text_width(&format!("{out}...")) > width {
-                out.pop();
-                break;
-            }
-        }
-        format!("{out}...")
+        fit_with(|t| self.text_width(t), text, width)
     }
 
     pub fn text_right(&mut self, right: f32, y: f32, text: &str, rgb: u32) {
@@ -455,5 +444,48 @@ impl<'a> Ui<'a> {
             self.fill([x, y, 6.0, h], 0xFF80_8080);
             self.fill([x, y, 5.0, h - 1.0], 0xFFC0_C0C0);
         }
+    }
+}
+
+/// Characters looked at when cutting text to fit; the screen holds far fewer.
+const FIT_CHARS: usize = 512;
+
+/// `text` cut to `width` with "...": bounded first, then the cut found in a few measurements.
+pub fn fit_with(measure: impl Fn(&str) -> f32, text: &str, width: f32) -> String {
+    let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).chain([text.len()]).take(FIT_CHARS + 1).collect();
+    let bounded = ends.len() <= FIT_CHARS;
+    if bounded && measure(text) <= width {
+        return text.to_string();
+    }
+    // The longest prefix that fits with "..." (the empty one at least).
+    let (mut lo, mut hi) = (0, ends.len() - 1);
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if measure(&format!("{}...", &text[..ends[mid]])) <= width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    format!("{}...", &text[..ends[lo]])
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::fit_with;
+    use std::cell::Cell;
+
+    #[test]
+    fn a_long_text_is_cut_in_few_measurements() {
+        let calls = Cell::new(0);
+        let measure = |t: &str| {
+            calls.set(calls.get() + 1);
+            t.chars().count() as f32 * 6.0
+        };
+        let long = "x".repeat(200_000);
+        assert_eq!(fit_with(measure, &long, 60.0), format!("{}...", "x".repeat(7)));
+        assert!(calls.get() < 20, "{} measurements", calls.get());
+        assert_eq!(fit_with(measure, "short", 60.0), "short");
+        assert_eq!(fit_with(measure, "\u{e9}t\u{e9} long text", 30.0), "\u{e9}t...");
     }
 }

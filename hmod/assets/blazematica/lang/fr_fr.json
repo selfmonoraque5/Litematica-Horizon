@@ -440,6 +440,8 @@
   "blazematica.chat.paste_status": "Collage : %s blocs posés, région %s sur %s",
   "blazematica.err.paste_gone": "le collage s'est arrêté : son placement a été déchargé",
   "blazematica.err.paste_denied": "le collage s'est arrêté : le serveur n'a pas posé le premier bloc. Le collage demande les cheats (solo) ou les droits d'opérateur",
+  "blazematica.err.paste_unknown": "le collage ne peut pas commencer : le jeu ne connaît pas le bloc %s, ou son nom est mal formé",
+  "blazematica.err.save_no_link": "%s : ce disque ne peut pas créer de liens, le fichier ne peut donc pas être enregistré sans risquer d'en remplacer un (%s). Active l'écrasement ou enregistre ailleurs",
   "blazematica.err.paste_refused": "le collage s'est arrêté après %s blocs : %s",
   "blazematica.chat.pasted": "%s blocs collés en %s s",
   "blazematica.chat.paste_unloaded": "%s positions étaient dans des chunks non chargés : va là-bas et colle à nouveau",

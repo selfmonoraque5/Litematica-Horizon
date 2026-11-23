@@ -440,6 +440,8 @@
   "blazematica.chat.paste_status": "Einfügen: %s Blöcke gesetzt, Region %s von %s",
   "blazematica.err.paste_gone": "das Einfügen wurde beendet: die Platzierung wurde entladen",
   "blazematica.err.paste_denied": "das Einfügen wurde beendet: der Server hat den ersten Block nicht gesetzt. Einfügen braucht Cheats (Einzelspieler) oder Operator-Rechte",
+  "blazematica.err.paste_unknown": "das Einfügen kann nicht starten: das Spiel kennt den Block %s nicht, oder sein Name ist fehlerhaft",
+  "blazematica.err.save_no_link": "%s: dieses Laufwerk kann keine Links anlegen, daher kann die Datei nicht ohne das Risiko gespeichert werden, eine andere zu ersetzen (%s). Schalte Überschreiben ein oder speichere woanders",
   "blazematica.err.paste_refused": "das Einfügen wurde nach %s Blöcken beendet: %s",
   "blazematica.chat.pasted": "%s Blöcke in %s s eingefügt",
   "blazematica.chat.paste_unloaded": "%s Positionen lagen in nicht geladenen Chunks: geh dorthin und füge erneut ein",

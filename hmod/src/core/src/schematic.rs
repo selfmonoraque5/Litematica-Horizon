@@ -44,6 +44,14 @@ impl BlockState {
         let props: Vec<String> = self.properties.iter().map(|(k, v)| format!("{k}={v}")).collect();
         format!("{}[{}]", self.name, props.join(","))
     }
+    /// The state as a command argument, or None if any part has characters an id or a property
+    /// can't have (a malformed palette entry is never put in a command).
+    pub fn command_text(&self) -> Option<String> {
+        let word = |t: &str, extra: &[char]| !t.is_empty() && t.len() <= 128 && t.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || extra.contains(&c));
+        let (ns, path) = self.name.split_once(':')?;
+        let ok = word(ns, &['-', '.']) && word(path, &['-', '.', '/']) && self.properties.iter().all(|(k, v)| word(k, &[]) && word(v, &[]));
+        ok.then(|| self.to_string_full())
+    }
     /// Parses `name[k=v,...]`, adding `minecraft:` when the namespace is missing.
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
@@ -649,6 +657,14 @@ mod tests {
         assert_eq!(s.name, "minecraft:oak_stairs");
         assert_eq!(s.prop("half"), Some("top"));
         assert_eq!(s.to_string_full(), "minecraft:oak_stairs[facing=east,half=top]");
+        assert_eq!(s.command_text().as_deref(), Some("minecraft:oak_stairs[facing=east,half=top]"));
+        for bad in ["minecraft:stone run", "minecraft:stone\n/op", "Minecraft:Stone", "minecraft:"] {
+            let b = BlockState { name: bad.to_string(), properties: BTreeMap::new() };
+            assert_eq!(b.command_text(), None, "{bad:?}");
+        }
+        let mut odd = s.clone();
+        odd.properties.insert("half".into(), "top] stone".into());
+        assert_eq!(odd.command_text(), None);
         assert!(BlockState::parse("stone[facing").is_none());
     }
 

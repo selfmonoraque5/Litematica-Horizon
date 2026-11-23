@@ -271,14 +271,7 @@ fn hud(w: &World<'_>, event: &mut GuiRenderPostEvent<'_>) {
         let lines: Vec<(String, u32)> = lines
             .into_iter()
             .map(|(t, rgb)| {
-                if batch.text_width(&t) <= max {
-                    return (t, rgb);
-                }
-                let mut cut: String = t;
-                while !cut.is_empty() && batch.text_width(&format!("{cut}...")) > max {
-                    cut.pop();
-                }
-                (format!("{cut}..."), rgb)
+                (ui::fit_with(|t| batch.text_width(t), &t, max), rgb)
             })
             .collect();
         let width = lines.iter().map(|(t, _)| batch.text_width(t)).fold(0.0f32, f32::max) + 8.0;

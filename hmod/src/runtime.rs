@@ -1167,7 +1167,7 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
         "paste" => Ok(vec![match rest {
             ["cancel" | "stop"] => cancel_paste()?,
             ["status"] => paste_status()?,
-            [] => start_paste()?,
+            [] => start_paste(w)?,
             _ => return Err(tr!("err.paste_usage")),
         }]),
         "hover" => {
@@ -2253,12 +2253,9 @@ fn commit_file(path: &std::path::Path, bytes: &[u8], overwrite: bool) -> Result<
             match std::fs::hard_link(&tmp, path) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(None),
-                // No hard links on this drive: the file is created where none is, then written.
-                Err(_) => match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
-                    Ok(mut out) => out.write_all(bytes).and_then(|()| out.sync_all()).map_err(|e| shown(path, e)),
-                    Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(None),
-                    Err(e) => Err(shown(path, e)),
-                },
+                // No hard links on this drive: nothing is created, as the file couldn't appear
+                // whole in one step without the risk of replacing one.
+                Err(e) => Err(Some(tr!("err.save_no_link", path.display(), e))),
             }
         };
     }
@@ -2345,7 +2342,7 @@ struct Paste {
     started: std::time::Instant,
 }
 
-fn start_paste() -> Result<String, String> {
+fn start_paste(w: &World<'_>) -> Result<String, String> {
     if with(|s| s.paste.is_some()) {
         return Err(tr!("err.still_pasting"));
     }
@@ -2354,8 +2351,18 @@ fn start_paste() -> Result<String, String> {
         let boxes: Vec<_> = slot.placement.region_boxes().into_iter().filter_map(|b| s.layer.clip_bounds(b)).collect();
         let Some(&(first, _)) = boxes.first() else { return Err(tr!("err.paste_empty")) };
         let name = display_name(&slot.placement);
+        // Every block the paste could send must be one the game knows, written as the game writes
+        // it: a file with anything else is refused before any command goes out.
+        let id = slot.id;
+        let wanted: Vec<BlockState> = slot.placement.palettes().iter().flatten().filter(|b| !b.is_air() && !b.is_void()).cloned().collect();
+        for b in wanted {
+            let known = s.blocks.resolve(w, &b).map(|id| s.blocks.state(w, id)).and_then(|g| g.command_text());
+            if b.command_text().is_none() || known.is_none() {
+                return Err(tr!("err.paste_unknown", clip_chars(&b.name, 64)));
+            }
+        }
         s.paste = Some(Paste {
-            slot: slot.id,
+            slot: id,
             boxes,
             at: 0,
             next: first,
@@ -2430,11 +2437,15 @@ fn paste_step(w: &World<'_>) {
                 p.unloaded += 1;
                 continue;
             }
-            let Some((status, r, _)) = quick_status_in(w, s, slot, at) else { continue };
+            let Some((status, r, res)) = quick_status_in(w, s, slot, at) else { continue };
             if !matches!(status, Status::Missing | Status::WrongBlock | Status::WrongState) {
                 continue;
             }
-            let state = s.state_of(r).to_string_full();
+            // The game's own text for the state it resolved, never the file's.
+            let Some(state) = res.id.map(|id| s.blocks.state(w, id)).and_then(|g| g.command_text()) else {
+                s.out.push(tr!("error", tr!("err.paste_unknown", clip_chars(&s.state_of(r).name, 64))));
+                return;
+            };
             s.commands.push(format!("/setblock {} {} {} {state}", at[0], at[1], at[2]));
             p.placed += 1;
             sent += 1;
@@ -2514,7 +2525,15 @@ fn hover_line(w: &World<'_>, s: &mut State) -> Option<(String, u32)> {
 
 /// A block's id without `minecraft:`.
 fn short_name(state: &BlockState) -> String {
-    state.name.strip_prefix("minecraft:").unwrap_or(&state.name).to_string()
+    clip_chars(state.name.strip_prefix("minecraft:").unwrap_or(&state.name), 64)
+}
+
+/// `text` cut to `max` characters with "...", so a file's long text stays short on screen.
+pub fn clip_chars(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((i, _)) => format!("{}...", &text[..i]),
+        None => text.to_string(),
+    }
 }
 
 /// The properties that differ, as `facing: east -> north`.
@@ -2523,10 +2542,10 @@ fn state_diff(actual: &BlockState, wanted: &BlockState) -> String {
     for (k, v) in &wanted.properties {
         let have = actual.prop(k).unwrap_or("-");
         if have != v {
-            out.push(format!("{k}: {have} -> {v}"));
+            out.push(format!("{}: {} -> {}", clip_chars(k, 32), clip_chars(have, 32), clip_chars(v, 32)));
         }
     }
-    out.join(", ")
+    clip_chars(&out.join(", "), 160)
 }
 
 /// The verifier, over and over, for the selected placement alone (shown or not): its progress
