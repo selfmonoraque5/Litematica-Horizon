@@ -109,6 +109,13 @@ pub struct Blocks {
 }
 
 impl Blocks {
+    /// The game's state for exactly `s`, every property included, or None: nothing is dropped or
+    /// replaced (for commands, where a near state would place the wrong block).
+    pub fn strict(&mut self, w: &World<'_>, s: &BlockState) -> Option<StateId> {
+        let id = w.host.block_state_id(&s.command_text()?)?;
+        self.state(w, id).command_text().map(|_| id)
+    }
+
     /// The game's state for a schematic state; properties the game doesn't know are left out.
     pub fn resolve(&mut self, w: &World<'_>, s: &BlockState) -> Option<StateId> {
         if let Some(id) = self.ids.get(s) {

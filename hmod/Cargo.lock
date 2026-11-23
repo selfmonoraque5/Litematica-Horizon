@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "blazematica"
-version = "1.1.0"
+version = "1.1.2"
 dependencies = [
  "blazematica-core",
  "horizon-mod-api",
@@ -18,7 +18,7 @@ dependencies = [
 
 [[package]]
 name = "blazematica-core"
-version = "1.1.0"
+version = "1.1.2"
 dependencies = [
  "flate2",
 ]

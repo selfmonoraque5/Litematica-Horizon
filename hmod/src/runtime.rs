@@ -1167,7 +1167,7 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
         "paste" => Ok(vec![match rest {
             ["cancel" | "stop"] => cancel_paste()?,
             ["status"] => paste_status()?,
-            [] => start_paste(w)?,
+            [] => start_paste()?,
             _ => return Err(tr!("err.paste_usage")),
         }]),
         "hover" => {
@@ -2340,9 +2340,20 @@ struct Paste {
     /// Positions in chunks the client doesn't hold: left for a second paste.
     unloaded: u64,
     started: std::time::Instant,
+    /// The placement's revision when the paste began: a change (turned, mirrored, reloaded)
+    /// stops it, as its palette no longer matches `ids`.
+    revision: u64,
+    /// The palette check under way: the next region and entry to look up, None once all are.
+    check: Option<(usize, usize)>,
+    /// The game's exact state for each palette entry, by region (None: air, structure void, or
+    /// not checked yet). Commands are written from these alone.
+    ids: Vec<Vec<Option<StateId>>>,
 }
 
-fn start_paste(w: &World<'_>) -> Result<String, String> {
+/// Palette entries a paste checks in one tick, at most (and no longer than `PASTE_BUDGET`).
+const PASTE_CHECKS: usize = 512;
+
+fn start_paste() -> Result<String, String> {
     if with(|s| s.paste.is_some()) {
         return Err(tr!("err.still_pasting"));
     }
@@ -2351,18 +2362,15 @@ fn start_paste(w: &World<'_>) -> Result<String, String> {
         let boxes: Vec<_> = slot.placement.region_boxes().into_iter().filter_map(|b| s.layer.clip_bounds(b)).collect();
         let Some(&(first, _)) = boxes.first() else { return Err(tr!("err.paste_empty")) };
         let name = display_name(&slot.placement);
-        // Every block the paste could send must be one the game knows, written as the game writes
-        // it: a file with anything else is refused before any command goes out.
-        let id = slot.id;
-        let wanted: Vec<BlockState> = slot.placement.palettes().iter().flatten().filter(|b| !b.is_air() && !b.is_void()).cloned().collect();
-        for b in wanted {
-            let known = s.blocks.resolve(w, &b).map(|id| s.blocks.state(w, id)).and_then(|g| g.command_text());
-            if b.command_text().is_none() || known.is_none() {
-                return Err(tr!("err.paste_unknown", clip_chars(&b.name, 64)));
-            }
-        }
+        // Every block the paste could send is checked first, a slice each tick (`paste_step`):
+        // nothing is sent until all of them are exact game states.
+        let ids = slot.placement.palettes().iter().map(|p| vec![None; p.len()]).collect();
+        let revision = slot.placement.revision;
         s.paste = Some(Paste {
-            slot: id,
+            revision,
+            check: Some((0, 0)),
+            ids,
+            slot: slot.id,
             boxes,
             at: 0,
             next: first,
@@ -2395,6 +2403,44 @@ fn paste_step(w: &World<'_>) {
             s.out.push(tr!("error", tr!("err.paste_gone")));
             return;
         };
+        if s.slots[slot].placement.revision != p.revision {
+            s.out.push(tr!("error", tr!("err.paste_changed", p.placed)));
+            return;
+        }
+        // The palette check: every entry must be an exact game state, or nothing is sent.
+        if let Some((mut ri, mut pi)) = p.check {
+            let start = std::time::Instant::now();
+            let mut looked = 0;
+            loop {
+                let palettes = s.slots[slot].placement.palettes();
+                let Some(region) = palettes.get(ri) else {
+                    p.check = None;
+                    break;
+                };
+                let Some(b) = region.get(pi).cloned() else {
+                    (ri, pi) = (ri + 1, 0);
+                    continue;
+                };
+                if looked >= PASTE_CHECKS || start.elapsed() >= PASTE_BUDGET {
+                    p.check = Some((ri, pi));
+                    break;
+                }
+                looked += 1;
+                pi += 1;
+                if b.is_air() || b.is_void() {
+                    continue;
+                }
+                match s.blocks.strict(w, &b) {
+                    Some(id) => p.ids[ri][pi - 1] = Some(id),
+                    None => {
+                        s.out.push(tr!("error", tr!("err.paste_unknown", clip_chars(&b.name, 64))));
+                        return;
+                    }
+                }
+            }
+            s.paste = Some(p);
+            return;
+        }
         if let Some((at, ticks)) = p.probe {
             match quick_status_in(w, s, slot, at) {
                 Some((Status::Correct, ..)) => p.probe = None,
@@ -2437,12 +2483,14 @@ fn paste_step(w: &World<'_>) {
                 p.unloaded += 1;
                 continue;
             }
-            let Some((status, r, res)) = quick_status_in(w, s, slot, at) else { continue };
+            let Some((status, r, _)) = quick_status_in(w, s, slot, at) else { continue };
             if !matches!(status, Status::Missing | Status::WrongBlock | Status::WrongState) {
                 continue;
             }
-            // The game's own text for the state it resolved, never the file's.
-            let Some(state) = res.id.map(|id| s.blocks.state(w, id)).and_then(|g| g.command_text()) else {
+            // The game's own text for the exact state the check found, never the file's.
+            let (_, (ri, pi)) = r;
+            let checked = p.ids.get(ri).and_then(|v| usize::try_from(pi).ok().and_then(|i| v.get(i))).copied().flatten();
+            let Some(state) = checked.map(|id| s.blocks.state(w, id)).and_then(|g| g.command_text()) else {
                 s.out.push(tr!("error", tr!("err.paste_unknown", clip_chars(&s.state_of(r).name, 64))));
                 return;
             };
@@ -2538,15 +2586,27 @@ pub fn clip_chars(text: &str, max: usize) -> String {
 
 /// The properties that differ, as `facing: east -> north`.
 fn state_diff(actual: &BlockState, wanted: &BlockState) -> String {
-    let mut out = Vec::new();
+    let mut out = String::new();
     for (k, v) in &wanted.properties {
         let have = actual.prop(k).unwrap_or("-");
-        if have != v {
-            out.push(format!("{}: {} -> {}", clip_chars(k, 32), clip_chars(have, 32), clip_chars(v, 32)));
+        if have == v {
+            continue;
         }
+        // Once the line is full, the rest isn't looked at.
+        if out.len() >= DIFF_CHARS {
+            out.push_str(", ...");
+            break;
+        }
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(&format!("{}: {} -> {}", clip_chars(k, 32), clip_chars(have, 32), clip_chars(v, 32)));
     }
-    clip_chars(&out.join(", "), 160)
+    out
 }
+
+/// About as much of a property diff as the HUD line shows.
+const DIFF_CHARS: usize = 160;
 
 /// The verifier, over and over, for the selected placement alone (shown or not): its progress
 /// in the HUD and its material list. Another placement selected starts it over.
@@ -2749,6 +2809,19 @@ mod tests {
 
     fn leftovers(dir: &std::path::Path) -> Vec<String> {
         std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".tmp")).collect()
+    }
+
+    #[test]
+    fn a_long_property_diff_stops_once_the_line_is_full() {
+        use super::{BlockState, DIFF_CHARS, state_diff};
+        let mut wanted = BlockState::parse("minecraft:stone").unwrap();
+        for i in 0..10_000 {
+            wanted.properties.insert(format!("p{i:05}"), "on".into());
+        }
+        let actual = BlockState::parse("minecraft:stone").unwrap();
+        let diff = state_diff(&actual, &wanted);
+        assert!(diff.len() < DIFF_CHARS + 120 && diff.ends_with(", ..."), "{} chars", diff.len());
+        assert_eq!(state_diff(&BlockState::parse("minecraft:stone[a=1]").unwrap(), &BlockState::parse("minecraft:stone[a=2]").unwrap()), "a: 1 -> 2");
     }
 
     #[test]

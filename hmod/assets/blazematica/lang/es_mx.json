@@ -442,6 +442,7 @@
   "blazematica.err.paste_denied": "el pegado se detuvo: el servidor no colocó el primer bloque. Pegar necesita trucos (un jugador) o permisos de operador",
   "blazematica.err.paste_unknown": "el pegado no puede empezar: el juego no conoce el bloque %s, o su nombre está mal formado",
   "blazematica.err.save_no_link": "%s: esta unidad no puede crear enlaces, así que el archivo no se puede guardar sin riesgo de reemplazar otro (%s). Activa sobrescribir o guarda en otro lugar",
+  "blazematica.err.paste_changed": "el pegado se detuvo tras %s bloques: la colocación cambió (vuelve a pegar)",
   "blazematica.err.paste_refused": "el pegado se detuvo tras %s bloques: %s",
   "blazematica.chat.pasted": "%s bloques pegados en %s s",
   "blazematica.chat.paste_unloaded": "%s posiciones estaban en chunks no cargados: ve allí y vuelve a pegar",

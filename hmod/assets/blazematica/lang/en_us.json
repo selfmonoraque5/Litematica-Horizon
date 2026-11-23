@@ -442,6 +442,7 @@
   "blazematica.err.paste_denied": "the paste stopped: the server didn't place the first block. Paste needs cheats (single player) or operator rights",
   "blazematica.err.paste_unknown": "the paste can't start: the game doesn't know the block %s, or its name is malformed",
   "blazematica.err.save_no_link": "%s: this drive can't make links, so the file can't be saved without the risk of replacing one (%s). Turn on overwrite or save elsewhere",
+  "blazematica.err.paste_changed": "the paste stopped after %s blocks: the placement changed (paste again)",
   "blazematica.err.paste_refused": "the paste stopped after %s blocks: %s",
   "blazematica.chat.pasted": "Pasted %s blocks in %ss",
   "blazematica.chat.paste_unloaded": "%s positions were in chunks that aren't loaded: go there and paste again",
