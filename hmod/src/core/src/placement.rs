@@ -232,6 +232,32 @@ impl Placement {
         self.bounds
     }
 
+    /// The world box (min, max inclusive) of each region, mirrored and turned: what the placement
+    /// actually covers, which can be far less than [`bounds`](Self::bounds).
+    pub fn region_boxes(&self) -> Vec<([i32; 3], [i32; 3])> {
+        self.schematic
+            .regions
+            .iter()
+            .filter(|r| (0..3).all(|i| r.size[i] > 0))
+            .map(|r| {
+                let far = [0, 1, 2].map(|i| r.min[i] + r.size[i] - 1);
+                let (mut lo, mut hi) = ([i32::MAX; 3], [i32::MIN; 3]);
+                for x in [r.min[0], far[0]] {
+                    for y in [r.min[1], far[1]] {
+                        for z in [r.min[2], far[2]] {
+                            let w = self.to_world([x, y, z]);
+                            for i in 0..3 {
+                                lo[i] = lo[i].min(w[i]);
+                                hi[i] = hi[i].max(w[i]);
+                            }
+                        }
+                    }
+                }
+                (lo, hi)
+            })
+            .collect()
+    }
+
     pub fn in_bounds(&self, w: [i32; 3]) -> bool {
         let (lo, hi) = self.bounds;
         (0..3).all(|i| w[i] >= lo[i] && w[i] <= hi[i])

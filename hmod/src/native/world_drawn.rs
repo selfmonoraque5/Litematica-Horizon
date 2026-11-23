@@ -53,6 +53,9 @@ struct Out {
     const STRIDE: u64 = 44;
 
     struct Gpu {
+        /// The device everything here was made on: after device recovery the game draws with a
+        /// new one, whose format may be the same.
+        device: wgpu::Device,
         format: wgpu::TextureFormat,
         pipeline: wgpu::RenderPipeline,
         layout: wgpu::BindGroupLayout,
@@ -174,6 +177,7 @@ struct Out {
             &[255, 255, 255, 255],
         );
         Gpu {
+            device: device.clone(),
             format,
             pipeline,
             layout,
@@ -259,9 +263,10 @@ struct Out {
         return;
     }
     let mut slot = blazematica::overlay::GPU.lock().unwrap_or_else(|e| e.into_inner());
-    let fresh = slot.as_ref().and_then(|b| b.downcast_ref::<Gpu>()).is_none_or(|g| g.format != world.color_format);
+    let fresh = slot.as_ref().and_then(|b| b.downcast_ref::<Gpu>()).is_none_or(|g| g.format != world.color_format || g.device != *world.device);
     if fresh {
-        // Made anew: what was uploaded before is gone with the old one.
+        // Made anew, on a new device or for a new format: what was uploaded before is gone with
+        // the old one, so the overlay's geometry is built again (`lost`).
         if slot.is_some() {
             scene.lost = true;
         }

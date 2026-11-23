@@ -1995,6 +1995,9 @@ pub struct SaveJob {
     /// Of `pending`, those not loaded, nearest first (updated every tick).
     pub unloaded: Vec<(i32, i32)>,
     started: std::time::Instant,
+    /// The player asked to replace an existing file (`/lm save <name> overwrite`, or the menu's
+    /// Overwrite): without it, a file there when the save ends is kept.
+    overwrite: bool,
     /// The world (`world_key`) the area is in.
     world: Option<String>,
 }
@@ -2058,6 +2061,7 @@ pub fn start_save(w: &World<'_>, name: &str, overwrite: bool) -> Result<String, 
         total,
         unloaded: Vec::new(),
         started: std::time::Instant::now(),
+        overwrite,
         world: store::world_key(w),
     };
     with(|s| s.save = Some(job));
@@ -2140,7 +2144,8 @@ fn save_chunk(w: &World<'_>, job: &mut SaveJob, (cx, cz): (i32, i32)) {
 
 /// Every chunk is in: the schematic is built and written by a thread of its own.
 fn finish_save(w: &World<'_>, job: SaveJob) {
-    let SaveJob { name, file, path, lo, hi, builder, started, .. } = job;
+    let SaveJob { name, file, path, lo, hi, builder, started, overwrite, .. } = job;
+    let asked = name.clone();
     let size = blazematica_core::area::size(lo, hi).unwrap_or([1; 3]);
     let volume = blazematica_core::area::volume(size).and_then(|v| i64::try_from(v).ok()).unwrap_or(0);
     let (blocks, states) = (builder.non_air(), builder.states());
@@ -2166,21 +2171,63 @@ fn finish_save(w: &World<'_>, job: SaveJob) {
     let (tx, rx) = std::sync::mpsc::channel();
     let name = file.clone();
     std::thread::spawn(move || {
-        let tmp = path.with_file_name(format!("{name}.tmp"));
-        let written = schematic.to_bytes().and_then(|bytes| {
-            std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
-            std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
-        });
-        if written.is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
+        let written = schematic.to_bytes().map_err(Some).and_then(|bytes| commit_file(&path, &bytes, overwrite));
         let line = match written {
             Ok(()) => tr!("chat.saved", name, size[0], size[1], size[2], blocks, states, format!("{:.1}", started.elapsed().as_secs_f32())),
-            Err(e) => tr!("error", tr!("err.write", name, e)),
+            Err(None) => tr!("error", tr!("err.file_exists", name, asked)),
+            Err(Some(e)) => tr!("error", tr!("err.write", name, e)),
         };
         let _ = tx.send(line);
     });
     with(|s| s.save_write = Some(SaveWrite { file, done: rx }));
+}
+
+/// Writes `bytes` to `path` through a temporary file of its own in the same folder, created
+/// exclusively so it can't replace anything. `path` itself is replaced only when `overwrite`, the
+/// player's explicit choice; otherwise a file there (even one made while the save ran) is kept
+/// and the result is `Err(None)`. `Err(Some(why))` for a failed write.
+fn commit_file(path: &std::path::Path, bytes: &[u8], overwrite: bool) -> Result<(), Option<String>> {
+    use std::io::{ErrorKind, Write};
+    let shown = |p: &std::path::Path, e: std::io::Error| Some(format!("{}: {e}", p.display()));
+    let dir = path.parent().ok_or_else(|| Some(format!("{}: no folder", path.display())))?;
+    let base = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let mut made = None;
+    for n in 0..64u32 {
+        let tmp = dir.join(format!(".{base}.{stamp}.{n}.tmp"));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(f) => {
+                made = Some((tmp, f));
+                break;
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(shown(&tmp, e)),
+        }
+    }
+    let Some((tmp, mut f)) = made else {
+        return Err(Some(format!("{}: no free temporary file name", dir.display())));
+    };
+    let mut done = f.write_all(bytes).and_then(|()| f.sync_all()).map_err(|e| shown(&tmp, e));
+    drop(f);
+    if done.is_ok() {
+        done = if overwrite {
+            std::fs::rename(&tmp, path).map_err(|e| shown(path, e))
+        } else {
+            // A hard link is made only where no file is, so nothing already there is replaced.
+            match std::fs::hard_link(&tmp, path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(None),
+                // No hard links on this drive: the file is created where none is, then written.
+                Err(_) => match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+                    Ok(mut out) => out.write_all(bytes).and_then(|()| out.sync_all()).map_err(|e| shown(path, e)),
+                    Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(None),
+                    Err(e) => Err(shown(path, e)),
+                },
+            }
+        };
+    }
+    let _ = std::fs::remove_file(&tmp);
+    done
 }
 
 fn cancel_save() -> Result<String, String> {
@@ -2414,4 +2461,44 @@ pub fn hud_lines(w: &World<'_>) -> Vec<(String, u32)> {
         lines.extend(with(|s| tool_lines(s)));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::commit_file;
+
+    fn folder(name: &str) -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let dir = std::env::temp_dir().join(format!("blazematica-{name}-{stamp}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn leftovers(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".tmp")).collect()
+    }
+
+    #[test]
+    fn a_save_never_replaces_a_file_unless_asked() {
+        let dir = folder("commit");
+        let path = dir.join("hut.litematic");
+        assert_eq!(commit_file(&path, b"first", false), Ok(()));
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        // Made meanwhile, or already there: kept without the player's overwrite.
+        assert_eq!(commit_file(&path, b"second", false), Err(None));
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        assert_eq!(commit_file(&path, b"third", true), Ok(()));
+        assert_eq!(std::fs::read(&path).unwrap(), b"third");
+        assert!(leftovers(&dir).is_empty(), "temporary files are removed: {:?}", leftovers(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_named_like_the_old_temporary_one_is_left_alone() {
+        let dir = folder("tmpname");
+        std::fs::write(dir.join("hut.litematic.tmp"), b"mine").unwrap();
+        assert_eq!(commit_file(&dir.join("hut.litematic"), b"saved", false), Ok(()));
+        assert_eq!(std::fs::read(dir.join("hut.litematic.tmp")).unwrap(), b"mine");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

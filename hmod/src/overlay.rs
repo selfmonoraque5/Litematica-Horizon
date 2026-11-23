@@ -242,6 +242,9 @@ const MESH_BUDGET: Duration = Duration::from_millis(4);
 const MARKS_BUDGET: Duration = Duration::from_millis(3);
 /// Most blocks highlighted at once, the nearest ones.
 const MAX_MARKS: usize = 50_000;
+/// The most sections the highlights look at in one pass, so a huge placement can't stall or fill
+/// memory before the per-tick budget applies.
+const MAX_WANTED: u64 = 8_192;
 /// Most chunk frames a save shows.
 const SAVE_FRAMES: usize = 1024;
 
@@ -297,7 +300,15 @@ fn rebuild(w: &World<'_>, ops: &dyn GameOps) {
     let Some((key, anchor, boxes, radius, limit)) = runtime::with(|s| {
         let st = &s.settings;
         let key: MeshKey = (s.rev, s.layer, st.mode, st.show_extra, st.show_wrong, st.strict, st.power, st.alpha.to_bits(), st.hide_fluids);
-        let boxes: Vec<_> = s.slots.iter().filter(|x| x.shown).filter_map(|x| s.layer.clip_bounds(x.placement.bounds())).collect();
+        // The regions themselves, not the placement's enclosing box: a sparse schematic covers
+        // far less.
+        let boxes: Vec<_> = s
+            .slots
+            .iter()
+            .filter(|x| x.shown)
+            .flat_map(|x| x.placement.region_boxes())
+            .filter_map(|b| s.layer.clip_bounds(b))
+            .collect();
         // Positions are relative to the placements' corner, else (only an area) the area's.
         let anchor = s
             .shown_bounds()
@@ -644,14 +655,32 @@ fn marks_step(w: &World<'_>, ops: &dyn GameOps) {
         return;
     }
     let full = changed || mesh(|m| m.tick % FAR_EVERY == 1);
-    let reach = if full { i32::MAX / 2 } else { NEAR };
+    // The sections of `boxes` within `reach` of the player, counted before any is collected; a
+    // far-reaching placement is looked at closer in until it fits MAX_WANTED.
+    let span = |reach: i32| {
+        boxes.iter().map(move |&(lo, hi)| {
+            let a = [0, 1, 2].map(|i| lo[i].max(me[i].saturating_sub(reach)) >> 4);
+            let b = [0, 1, 2].map(|i| hi[i].min(me[i].saturating_add(reach)) >> 4);
+            (a, b)
+        })
+    };
+    let count = |reach: i32| -> u64 {
+        span(reach)
+            .map(|(a, b)| (0..3).map(|i| u64::try_from(i64::from(b[i]) - i64::from(a[i]) + 1).unwrap_or(0)).product::<u64>())
+            .fold(0u64, u64::saturating_add)
+    };
+    let mut reach = if full { i32::MAX / 2 } else { NEAR };
+    while reach > NEAR && count(reach) > MAX_WANTED {
+        reach = (reach.min(1 << 14) / 2).max(NEAR);
+    }
     let mut wanted: HashSet<[i32; 3]> = HashSet::new();
-    for (lo, hi) in boxes {
-        let a = [0, 1, 2].map(|i| lo[i].max(me[i].saturating_sub(reach)) >> 4);
-        let b = [0, 1, 2].map(|i| hi[i].min(me[i].saturating_add(reach)) >> 4);
+    'boxes: for (a, b) in span(reach) {
         for sy in a[1]..=b[1] {
             for sz in a[2]..=b[2] {
                 for sx in a[0]..=b[0] {
+                    if wanted.len() as u64 >= MAX_WANTED {
+                        break 'boxes;
+                    }
                     wanted.insert([sx, sy, sz]);
                 }
             }

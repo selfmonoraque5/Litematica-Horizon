@@ -20,7 +20,7 @@ Blazematica started from keksi2k's [Horizonmatica](https://github.com/keksi2k/ho
 - File reading is bounded (size and decompression caps), and uncompressed `.nbt` files load too.
 - Built for the current Horizon Nightly.
 
-Its commands are `/blazematica` and `/lm`, so it can be installed next to Horizonmatica (`/horizonmatica`, `/hm`).
+Its id and commands (`/blazematica`, `/lm`) differ from Horizonmatica's (`/horizonmatica`, `/hm`), so they don't clash. Both patch the game, though, so they can only be built together when both are made for the same Nightly: right now Horizonmatica's listed release needs Nightly 0a875da and Blazematica f1bb66f.
 
 ## Install
 
