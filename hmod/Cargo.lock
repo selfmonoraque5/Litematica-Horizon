@@ -35,17 +35,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "litematica_horizon"
-version = "0.1.0"
-dependencies = [
- "litematica-horizon-core",
-]
-
-[[package]]
 name = "litematica-horizon-core"
 version = "0.1.0"
 dependencies = [
  "flate2",
+]
+
+[[package]]
+name = "litematica_horizon"
+version = "0.1.0"
+dependencies = [
+ "litematica-horizon-core",
 ]
 
 [[package]]
