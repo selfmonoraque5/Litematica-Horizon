@@ -1,6 +1,6 @@
-// Litematica for Horizon's support module in the game's `game` module (`crate::game::litematica_horizon_game`,
+// Blazematica's support module in the game's `game` module (`crate::game::blazematica_game`,
 // declared in horizon-mod.toml): what the overlay needs of the game beyond the mod API. It runs
-// the overlay's tick with the game's block models and world sections (`litematica_horizon::overlay`).
+// the overlay's tick with the game's block models and world sections (`blazematica::overlay`).
 // `super` is `crate::game`.
 
 struct Ops<'a, 'g>(&'a super::Game<'g>);
@@ -10,8 +10,8 @@ fn engine(state: mod_api::BlockState) -> Option<horizon_world::registry::BlockSt
     horizon_gameplay::api_values::TryIntoEngine::<()>::try_into_engine(&state, &()).ok()
 }
 
-fn ours(v: &horizon_client::mesher::Vertex) -> litematica_horizon::overlay::Vertex {
-    litematica_horizon::overlay::Vertex {
+fn ours(v: &horizon_client::mesher::Vertex) -> blazematica::overlay::Vertex {
+    blazematica::overlay::Vertex {
         pos: v.pos,
         uv: v.uv,
         layer: v.layer,
@@ -22,7 +22,7 @@ fn ours(v: &horizon_client::mesher::Vertex) -> litematica_horizon::overlay::Vert
     }
 }
 
-impl litematica_horizon::overlay::GameOps for Ops<'_, '_> {
+impl blazematica::overlay::GameOps for Ops<'_, '_> {
     fn white_uv(&self) -> [f32; 2] {
         horizon_client::gfx::lightning::white_uv(&self.0.gui.atlas.font.white())
     }
@@ -34,14 +34,14 @@ impl litematica_horizon::overlay::GameOps for Ops<'_, '_> {
         Some(section as std::sync::Arc<dyn std::any::Any + Send + Sync>)
     }
 
-    fn block_model(&self, state: mod_api::BlockState, at: [f32; 3], light: u32, out: &mut Vec<litematica_horizon::overlay::Vertex>) {
+    fn block_model(&self, state: mod_api::BlockState, at: [f32; 3], light: u32, out: &mut Vec<blazematica::overlay::Vertex>) {
         let Some(id) = engine(state) else { return };
         let mut quads = Vec::new();
         self.0.block_model_vertices(id, 0, glam::Mat4::from_translation(glam::Vec3::from_array(at)), light, true, &mut quads);
         out.extend(quads.iter().map(ours));
     }
 
-    fn special_model(&self, state: mod_api::BlockState, at: [f32; 3], out: &mut Vec<litematica_horizon::overlay::Vertex>) {
+    fn special_model(&self, state: mod_api::BlockState, at: [f32; 3], out: &mut Vec<blazematica::overlay::Vertex>) {
         let Some(id) = engine(state) else { return };
         let mut quads = Vec::new();
         self.0.special_block_model(id, glam::Mat4::from_translation(glam::Vec3::from_array(at)), 0xFF, &mut quads);
@@ -55,7 +55,7 @@ impl litematica_horizon::overlay::GameOps for Ops<'_, '_> {
 
 // ---------------------------------------------------------------- the hands (printer, easy place)
 
-/// The player's hands, for `litematica_horizon::hands`.
+/// The player's hands, for `blazematica::hands`.
 struct Hands<'a, 'g>(&'a mut super::Game<'g>);
 
 fn face_dir(f: [i32; 3]) -> horizon_core::geometry::Direction {
@@ -69,8 +69,8 @@ fn face_dir(f: [i32; 3]) -> horizon_core::geometry::Direction {
     }
 }
 
-fn our_hit(h: &super::Hit) -> litematica_horizon::hands::Hit {
-    litematica_horizon::hands::Hit { pos: h.pos, face: h.face, point: h.point }
+fn our_hit(h: &super::Hit) -> blazematica::hands::Hit {
+    blazematica::hands::Hit { pos: h.pos, face: h.face, point: h.point }
 }
 
 impl Hands<'_, '_> {
@@ -85,7 +85,7 @@ impl Hands<'_, '_> {
     }
 }
 
-impl litematica_horizon::hands::Hands for Hands<'_, '_> {
+impl blazematica::hands::Hands for Hands<'_, '_> {
     fn host(&self) -> &dyn mod_api::ClientHost {
         &*self.0
     }
@@ -143,15 +143,15 @@ impl litematica_horizon::hands::Hands for Hands<'_, '_> {
         self.0.inventory.get(i).and_then(Option::as_ref).map(|s| s.item.to_string())
     }
 
-    fn clip_ray(&self, origin: [f64; 3], dir: [f64; 3], reach: f64) -> Option<litematica_horizon::hands::Hit> {
+    fn clip_ray(&self, origin: [f64; 3], dir: [f64; 3], reach: f64) -> Option<blazematica::hands::Hit> {
         self.0.clip_ray(origin, dir, reach).as_ref().map(our_hit)
     }
 
-    fn facts(&self, p: [i32; 3]) -> litematica_horizon::hands::Facts {
+    fn facts(&self, p: [i32; 3]) -> blazematica::hands::Facts {
         let id = self.0.world.block(p[0], p[1], p[2]);
         let facts = self.0.res.facts();
         let f = facts.get(id);
-        litematica_horizon::hands::Facts {
+        blazematica::hands::Facts {
             air: facts.is_air(id),
             replaceable: f.replaceable,
             no_outline: f.outline.is_empty(),
@@ -164,7 +164,7 @@ impl litematica_horizon::hands::Hands for Hands<'_, '_> {
         self.0.pack.assets.registry.default_state(item).is_some()
     }
 
-    fn placement(&mut self, hit: &litematica_horizon::hands::Hit, yaw: f32, pitch: f32, sneak: bool, item: &str) -> Option<([i32; 3], mod_api::BlockState)> {
+    fn placement(&mut self, hit: &blazematica::hands::Hit, yaw: f32, pitch: f32, sneak: bool, item: &str) -> Option<([i32; 3], mod_api::BlockState)> {
         let ctx = horizon_world::level::PlaceContext {
             clicked_pos: horizon_core::position::BlockPos::new(hit.pos[0], hit.pos[1], hit.pos[2]),
             face: face_dir(hit.face),
@@ -181,7 +181,7 @@ impl litematica_horizon::hands::Hands for Hands<'_, '_> {
         Some(([preview.pos.x, preview.pos.y, preview.pos.z], state))
     }
 
-    fn click(&mut self, yaw: f32, pitch: f32, hit: &litematica_horizon::hands::Hit, sneak: bool) -> Result<(), String> {
+    fn click(&mut self, yaw: f32, pitch: f32, hit: &blazematica::hands::Hit, sneak: bool) -> Result<(), String> {
         let forced = super::Hit { pos: hit.pos, face: hit.face, point: hit.point, inside: false };
         if self.0.remote.is_some() {
             // The look goes out before the click; the real one goes back the next tick
@@ -278,13 +278,13 @@ impl litematica_horizon::hands::Hands for Hands<'_, '_> {
 
 /// Once a client tick (the `tick_pre` mixin).
 pub fn tick(game: &mut super::Game<'_>) {
-    litematica_horizon::fix::install(fix_state, horizon_world::DATA_VERSION, legacy_state);
-    litematica_horizon::memory::install(total_ram);
+    blazematica::fix::install(fix_state, horizon_world::DATA_VERSION, legacy_state);
+    blazematica::memory::install(total_ram);
     {
         let game = &*game;
-        litematica_horizon::overlay::tick(game, &Ops(game));
+        blazematica::overlay::tick(game, &Ops(game));
     }
-    litematica_horizon::hands::tick(&mut Hands(game));
+    blazematica::hands::tick(&mut Hands(game));
 }
 
 /// The computer's RAM, as the game's debug screen reads it.
@@ -300,12 +300,12 @@ pub fn mouse(game: &mut super::Game<'_>, button: winit::event::MouseButton, pres
         winit::event::MouseButton::Middle => 2,
         _ => return false,
     };
-    litematica_horizon::hands::mouse(&mut Hands(game), b, pressed)
+    blazematica::hands::mouse(&mut Hands(game), b, pressed)
 }
 
 // ---------------------------------------------------------------- old schematics
 
-/// A 1.12 `blockId << 4 | data` as a 1.13 state (`litematica_horizon::fix::Legacy`): the game's data
+/// A 1.12 `blockId << 4 | data` as a 1.13 state (`blazematica::fix::Legacy`): the game's data
 /// fixer turns an old falling block's `TileID`/`Data` into its `BlockState` with vanilla's
 /// `BlockStateData` table.
 fn legacy_state(id: u32) -> Option<(String, Vec<(String, String)>)> {
@@ -320,7 +320,7 @@ fn legacy_state(id: u32) -> Option<(String, Vec<(String, String)>)> {
     state_of(tag.get("BlockState")?)
 }
 
-/// One block state through the game's data fixer (`litematica_horizon::fix::Fixer`).
+/// One block state through the game's data fixer (`blazematica::fix::Fixer`).
 fn fix_state(name: &str, properties: &[(String, String)], from: i32) -> Option<(String, Vec<(String, String)>)> {
     let name_tag = horizon_core::nbt::Tag::String(name.into());
     let mut tag = if properties.is_empty() {

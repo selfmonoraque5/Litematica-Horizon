@@ -43,7 +43,7 @@ pub fn read_value(w: &World<'_>, key: &str) -> Option<String> {
 pub fn write_value(w: &World<'_>, key: &str, value: &str) {
     let Ok(path) = ConfigPath::new(&file_name(key)) else { return };
     if let Err(e) = w.host.data_files().write(&path, value.as_bytes()) {
-        eprintln!("[Litematica for Horizon] can't keep {key}: {e:?}");
+        eprintln!("[Blazematica] can't keep {key}: {e:?}");
     }
 }
 

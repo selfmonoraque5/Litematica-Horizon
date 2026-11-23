@@ -1,4 +1,4 @@
-//! The Litematica for Horizon menu (M): the mod's own screen (`ClientHost::mod_screen_open`), drawn with
+//! The Blazematica menu (M): the mod's own screen (`ClientHost::mod_screen_open`), drawn with
 //! the widgets of `ui.rs` in `screen_render_post`. The game keeps running behind it.
 //!
 //! Tabs: Load, Placement, Save, Tool, Printer, Display, Materials, and the credits. The keys are
@@ -90,8 +90,8 @@ fn action(w: &World<'_>, id: &str) {
 }
 
 fn file_info(dir: &std::path::Path, name: &str) -> Result<FileInfo, String> {
-    let bytes = litematica_horizon_core::nbt::read_input(&dir.join(name))?;
-    let s = litematica_horizon_core::formats::summary(&bytes)?;
+    let bytes = blazematica_core::nbt::read_input(&dir.join(name))?;
+    let s = blazematica_core::formats::summary(&bytes)?;
     Ok(FileInfo {
         name: if s.name.is_empty() { name.to_string() } else { s.name },
         format: runtime::format_text(s.format),
@@ -215,7 +215,7 @@ pub fn draw(w: &World<'_>, mut ui: Ui<'_>) {
         s.placement().map(|p| if s.slots.len() > 1 { format!("{} ({}/{})", display_name(p), s.selected + 1, s.slots.len()) } else { display_name(p) })
     });
     let cx = ui.width / 2.0;
-    ui.text_centered(cx, 7.0, "Litematica for Horizon", 0xFFFFFF);
+    ui.text_centered(cx, 7.0, "Blazematica", 0xFFFFFF);
     if let Some(name) = &loaded {
         let shown = ui.fit(name, width / 2.0 - 50.0);
         ui.text_right(x0 + width, 7.0, &shown, 0x55FFFF);
@@ -274,7 +274,7 @@ fn tab_load(w: &World<'_>, ui: &mut Ui<'_>, r: Rect) {
             s.files = dir
                 .as_ref()
                 .map(|dir| {
-                    litematica_horizon_core::list_schematics(dir)
+                    blazematica_core::list_schematics(dir)
                         .into_iter()
                         .map(|n| {
                             let size = std::fs::metadata(dir.join(&n)).map_or(0, |m| m.len());

@@ -9,8 +9,8 @@
 use crate::i18n::item_name;
 use crate::runtime;
 use crate::world::{StateId, World};
-use litematica_horizon_core::verify::{self, Status};
-use litematica_horizon_core::{BlockState, materials, printer};
+use blazematica_core::verify::{self, Status};
+use blazematica_core::{BlockState, materials, printer};
 use mod_api::ClientHost;
 use std::cell::RefCell;
 use std::collections::HashSet;

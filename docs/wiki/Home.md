@@ -1,9 +1,9 @@
-# Litematica for Horizon wiki
+# Blazematica wiki
 
 Every button, slider and switch of the menu, what it does, and the command that does the same (where there is one).
 
 Press **M** in game to open the menu. **1–7** switch tabs; **Esc**, **M** or **Done** close it. The game keeps running
-behind it. All commands start with `/litematica` or the short form `/lm`.
+behind it. All commands start with `/blazematica` or the short form `/lm`.
 
 ## The tabs
 

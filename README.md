@@ -1,4 +1,6 @@
-# Litematica for Horizon
+<p align="center"><img src="hmod/icon.png" width="128" alt="Blazematica icon"></p>
+
+# Blazematica
 
 A native Rust schematic mod for Horizon’s Minecraft Java Edition 26.3 client. Open the mod with **M** or start with `/lm help` in a world.
 
@@ -7,11 +9,35 @@ A native Rust schematic mod for Horizon’s Minecraft Java Edition 26.3 client. 
 - Compare your build to its schematic and view the required materials. Keep multiple placements and restore them per world and dimension.
 - Capture an area and export its blocks and states as a `.litematic`. Easy Place and the optional printer are available from the mod menu.
 
-## Build and install
+<p align="center"><img src="screenshots/ghost.jpg" width="49%" alt="A schematic shown as ghost blocks"> <img src="screenshots/materials.jpg" width="49%" alt="The materials list"></p>
 
-The manifest targets **Horizon Nightly 2026-11-20 (`0a875da`)**. The renderer and placement helpers are compiled into that native client. To build it, open the Horizon launcher, install the mod from the `hmod/` folder, and choose **Build**. This is native code and the launcher requires native-code approval. The compatible game revision is pinned in `hmod/horizon-mod.toml`.
+### Compared with Horizonmatica
 
-With the matching Horizon launcher and `cargo-horizon-mod` installed, package the mod with `python tools/package.py --launcher <path-to-horizon-launcher>`. Run `cargo test --workspace` for the portable Rust tests. Run `cargo run -p sample-hut -- sample_hut.litematic` to generate a small test schematic.
+Blazematica started from keksi2k's [Horizonmatica](https://github.com/keksi2k/horizonmatica) and keeps its history. On top of it:
+
+- Layers can be sliced along X and Z, not only Y (`/lm layer axis x`).
+- Schematic text is read as Java writes it (modified UTF-8), so names with special characters load correctly.
+- File reading is bounded (size and decompression caps), and uncompressed `.nbt` files load too.
+- Built for the current Horizon Nightly.
+
+Its commands are `/blazematica` and `/lm`, so it can be installed next to Horizonmatica (`/horizonmatica`, `/hm`).
+
+## Install
+
+1. Download `blazematica-1.0.0.hmod` from the [latest release](https://github.com/selfmonoraque5/blazematica/releases/latest).
+2. Put it in the `horizon-native-mods` folder of your game folder, not in `mods`. On Windows that is
+   `%APPDATA%\horizon\horizon-native-mods`.
+3. In the launcher, open the Mods page and click **Build**. When it says **Up to date**, play.
+
+Made for Horizon **Nightly 2026-11-22 · f1bb66f**. It uses the game's own renderer and block placement where the mod
+API has nothing for them (`[[native.module]]` and `[[native.mixin]]` rows in `hmod/horizon-mod.toml`), so it builds
+only on that exact Nightly.
+
+## Building
+
+Package the mod with `cargo horizon-mod build` in `hmod/` (or `python tools/package.py --launcher <path-to-horizon-launcher>`).
+Run `cargo test --workspace` for the portable Rust tests and `cargo run -p sample-hut -- sample_hut.litematic` for a
+small test schematic.
 
 ## Use it in a world
 
@@ -24,4 +50,4 @@ See the [in-game guide](docs/wiki/Home.md), [command reference](docs/wiki/Comman
 
 ## Credits and license
 
-This independent Rust project builds on [Horizonmatica by keksi2k](https://github.com/keksi2k/horizonmatica). [Litematica by masa and Sakura-Ryoko](https://github.com/sakura-ryoko/litematica) is the reference for schematics and workflows. The printer is based on the behavior of [Litematica Printer by aleksilassila](https://github.com/aleksilassila/litematica-printer). Horizon provides the native loader, world access, renderer, and block-state data fixer. The Rust implementation is distributed under the [MIT license](LICENSE).
+Blazematica is maintained by [selfmonoraque5](https://github.com/selfmonoraque5). It was ported by [TheApple05](https://github.com/TheApple05) from [Horizonmatica by keksi2k](https://github.com/keksi2k/horizonmatica), which it builds on. [Litematica by masa and Sakura-Ryoko](https://github.com/sakura-ryoko/litematica) is the reference for schematics and workflows. The printer is based on the behavior of [Litematica Printer by aleksilassila](https://github.com/aleksilassila/litematica-printer). Horizon provides the native loader, world access, renderer, and block-state data fixer. The Rust implementation is distributed under the [MIT license](LICENSE). It is not made or endorsed by the Litematica, Litematica Printer or Horizonmatica authors.

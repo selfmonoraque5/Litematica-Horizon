@@ -19,8 +19,8 @@
 use crate::runtime::{self, Grab, Resolved};
 use crate::settings::Mode;
 use crate::world::{StateId, World};
-use litematica_horizon_core::placement::LayerFilter;
-use litematica_horizon_core::verify::Status;
+use blazematica_core::placement::LayerFilter;
+use blazematica_core::verify::Status;
 use mod_api::ClientHost;
 use std::any::Any;
 use std::cell::RefCell;

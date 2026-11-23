@@ -1,6 +1,6 @@
-//! Litematica for Horizon: the game-independent half of the mod.
+//! Blazematica: the game-independent half of the mod.
 //!
-//! The helpers and the `litematica_horizon` module compiled into `horizon-client` read the world and draw;
+//! The helpers and the `blazematica` module compiled into `horizon-client` read the world and draw;
 //! everything that doesn't need the game lives here, so it is tested with a plain `cargo test`
 //! and compiled once by Cargo.
 

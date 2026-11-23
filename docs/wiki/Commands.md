@@ -2,7 +2,7 @@
 
 [Back to the overview](Home.md)
 
-All commands start with `/litematica` or `/lm`. `/lm help` lists them in game. A switch without `on` or `off`
+All commands start with `/blazematica` or `/lm`. `/lm help` lists them in game. A switch without `on` or `off`
 toggles.
 
 The chat completes the commands: type `/lm ` and it offers the subcommands, narrowing them down as you type. After

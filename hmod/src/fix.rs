@@ -3,7 +3,7 @@
 //! game side (`src/native/game_support.rs`) as `Fixer`. The game also gives the table of 1.12's
 //! numeric block ids (`Legacy`) that MCEdit `.schematic` files need.
 
-use litematica_horizon_core::{BlockState, Schematic};
+use blazematica_core::{BlockState, Schematic};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -21,7 +21,7 @@ static LEGACY: OnceLock<Legacy> = OnceLock::new();
 pub fn install(fixer: Fixer, data_version: i32, legacy: Legacy) {
     let _ = FIXER.set((fixer, data_version));
     if LEGACY.set(legacy).is_ok() {
-        litematica_horizon_core::formats::install_legacy(legacy_state);
+        blazematica_core::formats::install_legacy(legacy_state);
     }
 }
 

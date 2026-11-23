@@ -68,6 +68,6 @@ pub fn need(path: &Path) -> Option<u64> {
         f.seek(SeekFrom::End(-4)).ok()?;
         f.read_exact(&mut tail).ok()?;
     }
-    let unpacked = litematica_horizon_core::nbt::unpacked_size(&head, tail, len);
+    let unpacked = blazematica_core::nbt::unpacked_size(&head, tail, len);
     Some(len.saturating_add(unpacked.saturating_mul(2)))
 }

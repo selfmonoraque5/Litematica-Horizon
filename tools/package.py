@@ -26,7 +26,7 @@ def main() -> None:
     manifest = tomllib.loads((MOD / "horizon-mod.toml").read_text(encoding="utf-8"))
     mod_id, version = manifest["id"], manifest["version"]
     package = MOD / "target" / "horizon-mod" / f"{mod_id}.hmod"
-    output = ROOT / "dist" / f"litematica-horizon-{version}.hmod"
+    output = ROOT / "dist" / f"blazematica-{version}.hmod"
 
     run(str(Path(args.launcher).resolve()), "native-lock", ".", "--update-lock")
     run("cargo", "horizon-mod", "build")

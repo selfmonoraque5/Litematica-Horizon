@@ -1,6 +1,6 @@
 //! The chat's completions for the mod's commands: schematic files for `/lm load`, placements for
 //! `/lm select` and `/lm unload`. Command argument types of the mod's own
-//! (`litematica_horizon:schematic`, `litematica_horizon:placement`); the game asks them as the line is
+//! (`blazematica:schematic`, `blazematica:placement`); the game asks them as the line is
 //! typed, without a host, so what they offer is kept here as it changes.
 
 use mod_api::{CommandArgumentError, CommandArgumentKind, CommandArgumentType, CommandSender, CommandSuggestion, Registrar};
@@ -55,7 +55,7 @@ impl CommandArgumentType for Schematic {
 
     fn suggest(&self, _sender: Option<&CommandSender>, prefix: &str) -> Vec<CommandSuggestion> {
         let dir = FOLDER.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let files = dir.map(|d| litematica_horizon_core::list_schematics(&d)).unwrap_or_default();
+        let files = dir.map(|d| blazematica_core::list_schematics(&d)).unwrap_or_default();
         matching(files, prefix)
     }
 }
@@ -87,8 +87,8 @@ pub fn register(r: &mut dyn Registrar) {
 /// The argument a subcommand's free part takes in its usage (`/lm load <file:...>`).
 pub fn argument_of(sub: &str) -> &'static str {
     match sub {
-        "load" => "<file:litematica_horizon:schematic>",
-        "select" | "unload" => "<placement:litematica_horizon:placement>",
+        "load" => "<file:blazematica:schematic>",
+        "select" | "unload" => "<placement:blazematica:placement>",
         _ => "<args:text>",
     }
 }

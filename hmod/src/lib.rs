@@ -1,5 +1,5 @@
-//! Litematica for Horizon: the mod's crate. The launcher compiles it against the pinned game and calls its
-//! `Hooks`. The game-independent logic lives in `src/core/` (crate `litematica_horizon_core`); the game
+//! Blazematica: the mod's crate. The launcher compiles it against the pinned game and calls its
+//! `Hooks`. The game-independent logic lives in `src/core/` (crate `blazematica_core`); the game
 //! is read through `mod_api` (`world`).
 
 #[macro_use]
@@ -24,12 +24,12 @@ use mod_api::{
 };
 use world::World;
 
-pub const ID: &str = "litematica_horizon";
+pub const ID: &str = "blazematica";
 pub const VERSION: &str = "0.5.3";
 /// The data version of the game the mod is pinned to (26.3), written into saved files.
 pub const DATA_VERSION: i32 = 5023;
 
-/// Who Litematica for Horizon owes its design to (`/litematica credits`).
+/// Who Blazematica owes its design to (`/blazematica credits`).
 pub fn credits() -> Vec<String> {
     let mut credits: Vec<_> = (1..=6).map(|i| tr!(&format!("credits.{i}"))).collect();
     credits.push("Horizonmatica (native Rust): keksi2k · github.com/keksi2k/horizonmatica".into());
@@ -59,7 +59,7 @@ impl Hooks for Mod {
     }
 
     fn register_client_commands(&self, _host: &mut dyn ClientHost, event: &mut RegisterClientCommandsEvent<'_>) {
-        for name in ["litematica", "lm"] {
+        for name in ["blazematica", "lm"] {
             event.commands.push(mod_api::Command::new(name));
             for (sub, words, rest) in runtime::WORDS {
                 event.commands.push(mod_api::Command::new(&format!("{name} {sub}")));
@@ -242,7 +242,7 @@ fn hud(w: &World<'_>, event: &mut GuiRenderPostEvent<'_>) {
         let rows: Vec<_> = list.iter().filter(|m| m.missing > 0).take(14).collect();
         let title = if rows.is_empty() { tr!("hud.materials_none") } else { tr!("hud.materials") };
         let title = title.as_str();
-        let text = |m: &litematica_horizon_core::materials::Material| format!("{}  {} / {}", i18n::item_name(&m.item), m.missing, m.available);
+        let text = |m: &blazematica_core::materials::Material| format!("{}  {} / {}", i18n::item_name(&m.item), m.missing, m.available);
         let width = rows.iter().map(|m| batch.text_width(&text(m)) + 16.0).fold(batch.text_width(title), f32::max) + 10.0;
         let height = 16.0 + rows.len() as f32 * 13.0;
         let x = batch.size()[0] - width - 2.0;

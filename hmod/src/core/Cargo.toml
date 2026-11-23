@@ -1,9 +1,9 @@
 [package]
-name = "litematica-horizon-core"
-version = "0.1.0"
+name = "blazematica-core"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
-description = "Litematica for Horizon: .litematic loading, placement transforms, verifier, material list and printer planning"
+description = "Blazematica: .litematic loading, placement transforms, verifier, material list and printer planning"
 
 # Every dependency must already be in Horizon's Cargo.lock (horizon-mixins checks it).
 [dependencies]
