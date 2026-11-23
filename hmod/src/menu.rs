@@ -1,4 +1,4 @@
-//! The Horizonmatica menu (M): the mod's own screen (`ClientHost::mod_screen_open`), drawn with
+//! The Litematica for Horizon menu (M): the mod's own screen (`ClientHost::mod_screen_open`), drawn with
 //! the widgets of `ui.rs` in `screen_render_post`. The game keeps running behind it.
 //!
 //! Tabs: Load, Placement, Save, Tool, Printer, Display, Materials, and the credits. The keys are
@@ -90,8 +90,8 @@ fn action(w: &World<'_>, id: &str) {
 }
 
 fn file_info(dir: &std::path::Path, name: &str) -> Result<FileInfo, String> {
-    let bytes = std::fs::read(dir.join(name)).map_err(|e| e.to_string())?;
-    let s = horizonmatica_core::formats::summary(&bytes)?;
+    let bytes = litematica_horizon_core::nbt::read_input(&dir.join(name))?;
+    let s = litematica_horizon_core::formats::summary(&bytes)?;
     Ok(FileInfo {
         name: if s.name.is_empty() { name.to_string() } else { s.name },
         format: runtime::format_text(s.format),
@@ -215,7 +215,7 @@ pub fn draw(w: &World<'_>, mut ui: Ui<'_>) {
         s.placement().map(|p| if s.slots.len() > 1 { format!("{} ({}/{})", display_name(p), s.selected + 1, s.slots.len()) } else { display_name(p) })
     });
     let cx = ui.width / 2.0;
-    ui.text_centered(cx, 7.0, "Horizonmatica", 0xFFFFFF);
+    ui.text_centered(cx, 7.0, "Litematica for Horizon", 0xFFFFFF);
     if let Some(name) = &loaded {
         let shown = ui.fit(name, width / 2.0 - 50.0);
         ui.text_right(x0 + width, 7.0, &shown, 0x55FFFF);
@@ -274,7 +274,7 @@ fn tab_load(w: &World<'_>, ui: &mut Ui<'_>, r: Rect) {
             s.files = dir
                 .as_ref()
                 .map(|dir| {
-                    horizonmatica_core::list_schematics(dir)
+                    litematica_horizon_core::list_schematics(dir)
                         .into_iter()
                         .map(|n| {
                             let size = std::fs::metadata(dir.join(&n)).map_or(0, |m| m.len());
@@ -939,7 +939,14 @@ fn tab_materials(w: &World<'_>, ui: &mut Ui<'_>, r: Rect) {
 fn tab_credits(w: &World<'_>, ui: &mut Ui<'_>, r: Rect) {
     // Scrolled where the window is too low for it (720p, a large GUI scale).
     let area = [r[0], r[1], r[2], r[3] - 24.0];
-    let content = 4.0 + 12.0 + 20.0 + 4.0 * 39.0 + 16.0 + 10.0;
+    let people = [
+        ("Horizonmatica".to_string(), "keksi2k".to_string(), "github.com/keksi2k/horizonmatica"),
+        ("Litematica".to_string(), tr!("menu.credits.litematica"), "github.com/sakura-ryoko/litematica"),
+        ("Litematica Printer".to_string(), tr!("menu.credits.printer"), "github.com/aleksilassila/litematica-printer"),
+        ("Horizon".to_string(), tr!("menu.credits.horizon"), "github.com/horizon-rust/horizon"),
+        (tr!("menu.credits.formats"), "Litematica, Sponge/WorldEdit, MCEdit, Mojang".to_string(), ".litematic .schem .schematic .nbt"),
+    ];
+    let content = 4.0 + 12.0 + 20.0 + people.len() as f32 * 39.0 + 16.0 + 10.0;
     let wd = if content > area[3] { area[2] - 10.0 } else { area[2] };
     let cx = r[0] + wd / 2.0;
     let mut y = ui.scroll_begin("credits", area, content) + 4.0;
@@ -947,12 +954,6 @@ fn tab_credits(w: &World<'_>, ui: &mut Ui<'_>, r: Rect) {
     y += 12.0;
     ui.text_centered(cx, y, &tr!("menu.credits.all_credit"), 0xA0A0A0);
     y += 20.0;
-    let people = [
-        ("Litematica".to_string(), tr!("menu.credits.litematica"), "github.com/maruohon/litematica"),
-        ("Litematica Printer".to_string(), tr!("menu.credits.printer"), "github.com/aleksilassila/litematica-printer"),
-        ("Horizon".to_string(), tr!("menu.credits.horizon"), "github.com/horizon-rust/horizon"),
-        (tr!("menu.credits.formats"), "Litematica, Sponge/WorldEdit, MCEdit, Mojang".to_string(), ".litematic .schem .schematic .nbt"),
-    ];
     for (what, who, link) in people {
         ui.text_centered(cx, y, &what, 0x55FFFF);
         y += 11.0;

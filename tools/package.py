@@ -1,61 +1,41 @@
 #!/usr/bin/env python3
-"""Packs the mod (hmod/) into dist/horizonmatica-<version>.hmod.
+"""Build, check, and copy the native Horizon package into dist/."""
 
-    python tools/package.py [--launcher <path>] [--sign]
-
-The package itself is made by `cargo horizon-mod build` (deterministic: anyone can rebuild it from the tag
-and get the same SHA-256). Before that, the registry-only Cargo.lock is regenerated with
-`horizon-launcher native-lock`, because a plain `cargo check` rewrites it. --launcher points at
-horizon-launcher(.exe) when it isn't on PATH. Afterwards `cargo horizon-mod check <package>` checks it.
-
---sign signs the package with minisign (default secret key ~/.minisign/minisign.key, asks for its password)
-and verifies the signature against minisign.pub, writing <package>.minisig next to it.
-"""
 import argparse
 import hashlib
-import pathlib
-import re
+from pathlib import Path
 import shutil
 import subprocess
+import tomllib
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 MOD = ROOT / "hmod"
 
 
-def run(*cmd: str) -> None:
-    subprocess.run(list(cmd), cwd=MOD, check=True, stdin=subprocess.DEVNULL)
+def run(*command: str) -> None:
+    subprocess.run(command, cwd=MOD, check=True, stdin=subprocess.DEVNULL)
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--launcher", default=shutil.which("horizon-launcher"), help="path to horizon-launcher")
-    ap.add_argument("--sign", action="store_true", help="sign the package with minisign")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--launcher", default=shutil.which("horizon-launcher"))
+    args = parser.parse_args()
     if not args.launcher:
-        raise SystemExit("horizon-launcher is not on PATH: pass --launcher <path>")
+        parser.error("horizon-launcher is not on PATH; supply --launcher")
 
-    toml = (MOD / "horizon-mod.toml").read_text(encoding="utf-8")
-    version = re.search(r'^version\s*=\s*"([^"]+)"', toml, re.M).group(1)
-    horizon = re.search(r'^horizon\s*=\s*"([0-9a-f]{40})"', toml, re.M).group(1)
-    out = ROOT / "dist" / f"horizonmatica-{version}.hmod"
-    sig = out.with_name(out.name + ".minisig")
-    if sig.exists() and not args.sign:
-        # A released package must not be replaced unnoticed: its signature would no longer match.
-        raise SystemExit(f"{sig.name} exists: {out.name} is signed already (pass --sign to sign it again)")
+    manifest = tomllib.loads((MOD / "horizon-mod.toml").read_text(encoding="utf-8"))
+    mod_id, version = manifest["id"], manifest["version"]
+    package = MOD / "target" / "horizon-mod" / f"{mod_id}.hmod"
+    output = ROOT / "dist" / f"litematica-horizon-{version}.hmod"
 
-    run(args.launcher, "native-lock", ".", "--update-lock")
+    run(str(Path(args.launcher).resolve()), "native-lock", ".", "--update-lock")
     run("cargo", "horizon-mod", "build")
-    out.parent.mkdir(exist_ok=True)
-    shutil.copyfile(MOD / "target" / "horizon-mod" / "horizonmatica.hmod", out)
-    run("cargo", "horizon-mod", "check", str(out))
-    digest = hashlib.sha256(out.read_bytes()).hexdigest()
-    print(f"wrote {out} (Horizon {horizon[:10]})\nsha256 {digest}")
-
-    if args.sign:
-        sig.unlink(missing_ok=True)  # never leave a stale signature next to a new package
-        subprocess.run(["minisign", "-Sm", str(out)], check=True)
-        subprocess.run(["minisign", "-Vm", str(out), "-p", str(ROOT / "minisign.pub")], check=True)
-        print(f"wrote {sig}")
+    run("cargo", "horizon-mod", "check", str(package))
+    output.parent.mkdir(exist_ok=True)
+    shutil.copyfile(package, output)
+    with output.open("rb") as archive:
+        digest = hashlib.file_digest(archive, "sha256").hexdigest()
+    print(f"{output}\nSHA-256 {digest}")
 
 
 if __name__ == "__main__":

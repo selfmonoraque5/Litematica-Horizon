@@ -9,10 +9,10 @@ shown. It needs a loaded schematic, and it is off each time you start the game.
 
 | Control | Default | What it does | Command |
 |---|---|---|---|
-| **Printer: ON/OFF** | Off | Starts or stops building | `/hm printer [on\|off]`, key **K** |
-| **One block every** | 3 ticks | Speed, from 1 to 20 ticks per block. Lower is faster | `/hm printer speed <ticks>` |
-| **Reach** | 4.5 blocks | How far it places, from 1 to 6 blocks | `/hm printer reach <blocks>` |
-| **Air place** | Off | When no neighbouring block can be clicked, it clicks the empty spot itself. Anti-cheat plugins notice this. Blocks with a real neighbour still come first | `/hm printer air [on\|off]` |
+| **Printer: ON/OFF** | Off | Starts or stops building | `/lm printer [on\|off]`, key **K** |
+| **One block every** | 3 ticks | Speed, from 1 to 20 ticks per block. Lower is faster | `/lm printer speed <ticks>` |
+| **Reach** | 4.5 blocks | How far it places, from 1 to 6 blocks | `/lm printer reach <blocks>` |
+| **Air place** | Off | When no neighbouring block can be clicked, it clicks the empty spot itself. Anti-cheat plugins notice this. Blocks with a real neighbour still come first | `/lm printer air [on\|off]` |
 
 The tab also shows **Placed this session**, and a note on what the printer is doing or why it is waiting.
 

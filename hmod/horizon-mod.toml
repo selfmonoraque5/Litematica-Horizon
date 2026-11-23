@@ -1,11 +1,11 @@
-id = "horizonmatica"
-name = "Horizonmatica"
-version = "0.5.3"
+id = "litematica_horizon"
+name = "Litematica for Horizon"
+version = "0.1.0"
 description = "Litematica for Horizon: load .litematic schematics as a ghost overlay, verify, save areas, material list and printer."
-authors = ["keksi2k"]
+authors = ["TheApple05", "keksi2k"]
 license = "MIT"
-homepage = "https://github.com/keksi2k/horizonmatica"
-issues = "https://github.com/keksi2k/horizonmatica/issues"
+homepage = "https://github.com/TheApple05/Litematica-Horizon"
+issues = "https://github.com/TheApple05/Litematica-Horizon/issues"
 api = "0.2"
 side = "client"
 capabilities = ["registries"]
@@ -21,11 +21,11 @@ mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 # The mod API can't draw this much geometry each frame or give the game's full block models, so
 # the overlay goes through the native route (see src/overlay.rs).
 
-# The game side: block models and world sections for the overlay -> crate::game::horizonmatica_game
+# The game side: block models and world sections for the overlay -> crate::game::litematica_horizon_game
 [[native.module]]
 id = "game"
 file = "crates/horizon-client/src/game.rs"
-name = "horizonmatica_game"
+name = "litematica_horizon_game"
 source = "src/native/game_support.rs"
 
 # Once a client tick: the overlay is built with the game side's help.

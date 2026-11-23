@@ -1,13 +1,13 @@
 // The world is drawn: the overlay goes on top, in a pass of its own (a mixin on
 // `horizon_mod_render::render::world_drawn`, so it sees that module's `WorldDrawn` and its wgpu).
 //
-// The game side builds quads per section into `horizonmatica::overlay::SCENE`; this uploads the
-// sections that changed and draws them. The GPU objects are kept in `horizonmatica::overlay::GPU`
+// The game side builds quads per section into `litematica_horizon::overlay::SCENE`; this uploads the
+// sections that changed and draws them. The GPU objects are kept in `litematica_horizon::overlay::GPU`
 // (the mod's crate has no wgpu, so it holds them as `Any`). A depth buffer of the pass's own keeps
 // the ghosts' inner faces hidden; the world's depth (`render_needs`) hides what is behind
 // terrain, unless the overlay is set to show through it. The highlights come in a second pass
 // over all of it, never tested against the world.
-fn horizonmatica_world_drawn(world: &mut WorldDrawn<'_>) {
+fn litematica_horizon_world_drawn(world: &mut WorldDrawn<'_>) {
     const SHADER: &str = r#"
 struct U { clip: mat4x4<f32>, params: vec4<f32>, offset: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: U;
@@ -49,7 +49,7 @@ struct Out {
     return t * in.color;
 }
 "#;
-    /// Bytes per vertex (`horizonmatica::overlay::Vertex`).
+    /// Bytes per vertex (`litematica_horizon::overlay::Vertex`).
     const STRIDE: u64 = 44;
 
     struct Gpu {
@@ -72,7 +72,7 @@ struct Out {
     fn new_gpu(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Gpu {
         let entry = |binding, ty| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::VERTEX_FRAGMENT, ty, count: None };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Horizonmatica ghost bindings"),
+            label: Some("Litematica for Horizon ghost bindings"),
             entries: &[
                 entry(0, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }),
                 entry(
@@ -95,11 +95,11 @@ struct Out {
             ],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Horizonmatica ghost shader"),
+            label: Some("Litematica for Horizon ghost shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Horizonmatica ghost layout"),
+            label: Some("Litematica for Horizon ghost layout"),
             bind_group_layouts: &[Some(&layout)],
             ..Default::default()
         });
@@ -108,7 +108,7 @@ struct Out {
             0 => Float32x3, 1 => Float32x2, 2 => Uint32, 3 => Unorm8x4, 4 => Uint32, 5 => Snorm8x4
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Horizonmatica ghosts"),
+            label: Some("Litematica for Horizon ghosts"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -143,14 +143,14 @@ struct Out {
             cache: None,
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Horizonmatica atlas"),
+            label: Some("Litematica for Horizon atlas"),
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
         let uniform_buffer = || {
             device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Horizonmatica ghost uniform"),
+                label: Some("Litematica for Horizon ghost uniform"),
                 size: 96,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -161,7 +161,7 @@ struct Out {
             device,
             queue,
             &wgpu::TextureDescriptor {
-                label: Some("Horizonmatica white"),
+                label: Some("Litematica for Horizon white"),
                 size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -191,7 +191,7 @@ struct Out {
 
     /// Brings the GPU's sections in line with the scene: gone ones dropped, changed ones
     /// uploaded again, the rest kept.
-    fn sync(gpu: &mut Gpu, device: &wgpu::Device, scene: &mut horizonmatica::overlay::Scene) {
+    fn sync(gpu: &mut Gpu, device: &wgpu::Device, scene: &mut litematica_horizon::overlay::Scene) {
         gpu.revision = scene.revision;
         for (wanted, have) in [(&mut scene.sections, &mut gpu.sections), (&mut scene.marks, &mut gpu.marks)] {
             have.retain(|k, (rev, ..)| wanted.get(k).is_some_and(|(r, _)| r == rev));
@@ -203,8 +203,8 @@ struct Out {
                 let buffer = wgpu::util::DeviceExt::create_buffer_init(
                     device,
                     &wgpu::util::BufferInitDescriptor {
-                        label: Some("Horizonmatica ghost vertices"),
-                        contents: horizonmatica::overlay::vertex_bytes(&quads[..n as usize * 4]),
+                        label: Some("Litematica for Horizon ghost vertices"),
+                        contents: litematica_horizon::overlay::vertex_bytes(&quads[..n as usize * 4]),
                         usage: wgpu::BufferUsages::VERTEX,
                     },
                 );
@@ -219,7 +219,7 @@ struct Out {
             let buffer = wgpu::util::DeviceExt::create_buffer_init(
                 device,
                 &wgpu::util::BufferInitDescriptor {
-                    label: Some("Horizonmatica ghost indices"),
+                    label: Some("Litematica for Horizon ghost indices"),
                     contents: bytemuck::cast_slice(&data),
                     usage: wgpu::BufferUsages::INDEX,
                 },
@@ -253,12 +253,12 @@ struct Out {
         out.iter().all(|&n| n < 8)
     }
 
-    let mut scene = horizonmatica::overlay::SCENE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut scene = litematica_horizon::overlay::SCENE.lock().unwrap_or_else(|e| e.into_inner());
     let Some(scene) = scene.as_mut() else { return };
     if !scene.visible || (scene.sections.is_empty() && scene.marks.is_empty()) {
         return;
     }
-    let mut slot = horizonmatica::overlay::GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let mut slot = litematica_horizon::overlay::GPU.lock().unwrap_or_else(|e| e.into_inner());
     let fresh = slot.as_ref().and_then(|b| b.downcast_ref::<Gpu>()).is_none_or(|g| g.format != world.color_format);
     if fresh {
         // Made anew: what was uploaded before is gone with the old one.
@@ -292,7 +292,7 @@ struct Out {
     let atlas_view = world.atlas.map_or_else(|| gpu.white.create_view(&Default::default()), |a| a.create_view(&Default::default()));
     let group_with = |buffer: &wgpu::Buffer| {
         world.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Horizonmatica ghost resources"),
+            label: Some("Litematica for Horizon ghost resources"),
             layout: &gpu.layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() },
@@ -306,7 +306,7 @@ struct Out {
     let size = world.size;
     if gpu.depth.as_ref().is_none_or(|(_, s)| *s != size) {
         let texture = world.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Horizonmatica ghost depth"),
+            label: Some("Litematica for Horizon ghost depth"),
             size: wgpu::Extent3d { width: size[0].max(1), height: size[1].max(1), depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
@@ -324,7 +324,7 @@ struct Out {
             continue;
         }
         let mut pass = world.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Horizonmatica ghosts"),
+            label: Some("Litematica for Horizon ghosts"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: world.color_view,
                 resolve_target: None,

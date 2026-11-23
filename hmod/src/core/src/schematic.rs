@@ -311,7 +311,18 @@ pub const MAX_REL: i32 = (1 << 30) - 1;
 
 pub(crate) fn vec3(tag: Option<&Tag>) -> Option<[i32; 3]> {
     let t = tag?;
-    Some([t.get("x")?.int()? as i32, t.get("y")?.int()? as i32, t.get("z")?.int()? as i32])
+    let read = |axis| i32::try_from(t.get(axis)?.int()?).ok();
+    Some([read("x")?, read("y")?, read("z")?])
+}
+
+pub(crate) fn region_bounds(position: [i32; 3], size: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
+    let position = position.map(i64::from);
+    let size = size.map(i64::from);
+    let end = [0, 1, 2].map(|i| position[i] + size[i] - size[i].signum());
+    let min = [0, 1, 2].map(|i| position[i].min(end[i]));
+    let max = [0, 1, 2].map(|i| position[i].max(end[i]));
+    (0..3).all(|i| size[i] != 0 && min[i] >= -i64::from(MAX_REL) && max[i] <= i64::from(MAX_REL))
+        .then(|| (min.map(|v| v as i32), max.map(|v| v as i32)))
 }
 
 pub(crate) fn read_state(tag: &Tag) -> Result<BlockState, String> {
@@ -339,7 +350,8 @@ impl Schematic {
         if !(1..=7).contains(&version) {
             return Err(format!("unsupported .litematic version {version}"));
         }
-        let data_version = root.get("MinecraftDataVersion").and_then(Tag::int).unwrap_or(0);
+        // Sakura's default for schematics written before the data-version tag was required.
+        let data_version = root.get("MinecraftDataVersion").and_then(Tag::int).unwrap_or(1139).max(1139);
         let m = root.get("Metadata");
         let s = |k: &str| m.and_then(|m| m.get(k)).and_then(Tag::str).unwrap_or("").to_string();
         let i = |k: &str| m.and_then(|m| m.get(k)).and_then(Tag::int).unwrap_or(0);
@@ -359,20 +371,10 @@ impl Schematic {
         for (name, mut r) in regions_tag {
             let position = vec3(r.get("Position")).ok_or_else(|| format!("region {name}: no Position"))?;
             let raw_size = vec3(r.get("Size")).ok_or_else(|| format!("region {name}: no Size"))?;
-            // Wide, so no Position or Size in a file can overflow.
-            let size = raw_size.map(|v| i64::from(v).abs());
-            let end = [0, 1, 2].map(|i| {
-                let (p, s) = (i64::from(position[i]), i64::from(raw_size[i]));
-                p + if s >= 0 { s - 1 } else { s + 1 }
-            });
-            let min = [0, 1, 2].map(|i| i64::from(position[i]).min(end[i]));
-            let max = [0, 1, 2].map(|i| i64::from(position[i]).max(end[i]));
-            if (0..3).any(|i| min[i] < -i64::from(MAX_REL) || max[i] > i64::from(MAX_REL)) {
+            let Some((min, max)) = region_bounds(position, raw_size) else {
                 return Err(format!("region {name} lies too far out (Position {position:?}, Size {raw_size:?})"));
-            }
-            // Inside ±MAX_REL, both fit an i32 now.
-            let size = size.map(|v| v as i32);
-            let min = min.map(|v| v as i32);
+            };
+            let size = [0, 1, 2].map(|i| max[i] - min[i] + 1);
             let volume = match crate::area::volume(size) {
                 Some(volume) if volume <= MAX_VOLUME => volume,
                 _ => return Err(format!("region {name} is too large ({size:?})")),
@@ -420,7 +422,7 @@ impl Schematic {
 
     /// Writes the schematic as a `.litematic`: gzip NBT, version 7 (sub-version 1), as Litematica
     /// writes it since 1.20.5.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         let v3 = |p: [i32; 3]| {
             Tag::Compound(BTreeMap::from([
                 ("x".into(), Tag::Int(p[0])),
@@ -551,9 +553,16 @@ mod tests {
         assert_eq!(s.bounds(), ([0, 0, 0], [2, 1, 3]));
     }
 
+    #[test]
+    fn files_without_a_data_version_use_the_sakura_fallback() {
+        let mut root = nbt::read_file_bytes(&sample().to_bytes().unwrap()).unwrap();
+        root.remove("MinecraftDataVersion");
+        assert_eq!(Schematic::from_nbt(root).unwrap().data_version, 1139);
+    }
+
     /// `sample()` written out, with its region's Position and Size replaced, read back.
     fn read_with(position: [i32; 3], size: [i32; 3]) -> Result<Schematic, String> {
-        let mut root = crate::nbt::read_file_bytes(&sample().to_bytes()).unwrap();
+        let mut root = crate::nbt::read_file_bytes(&sample().to_bytes().unwrap()).unwrap();
         let xyz = |v: [i32; 3]| Tag::Compound([("x", v[0]), ("y", v[1]), ("z", v[2])].into_iter().map(|(k, v)| (k.to_string(), Tag::Int(v))).collect());
         let Tag::Compound(top) = &mut root else { panic!() };
         let Some(Tag::Compound(regions)) = top.get_mut("Regions") else { panic!() };
@@ -580,7 +589,7 @@ mod tests {
     #[test]
     fn file_round_trip() {
         let s = sample();
-        let back = Schematic::from_bytes(&s.to_bytes()).unwrap();
+        let back = Schematic::from_bytes(&s.to_bytes().unwrap()).unwrap();
         let r = &back.regions[0];
         assert_eq!(back.metadata.name, "Test");
         assert_eq!(r.state([1, 0, 2]).name, "minecraft:stone");
@@ -609,7 +618,7 @@ mod tests {
         assert_eq!(b.non_air(), 7 * 5 * 6 - air);
         assert_eq!(b.states(), 40);
         let s = Schematic { version: 7, data_version: 4000, metadata: Metadata::default(), regions: vec![b.finish("r", Vec::new())] };
-        let back = Schematic::from_bytes(&s.to_bytes()).unwrap();
+        let back = Schematic::from_bytes(&s.to_bytes().unwrap()).unwrap();
         let r = &back.regions[0];
         assert_eq!(r.size, size);
         for y in 0..5 {
@@ -630,7 +639,7 @@ mod tests {
         let mut s = s;
         s.metadata.total_blocks = (7 * 5 * 6 - air) as i64;
         s.metadata.name = "Builder".into();
-        let info = crate::formats::summary(&s.to_bytes()).unwrap();
+        let info = crate::formats::summary(&s.to_bytes().unwrap()).unwrap();
         assert_eq!((info.name.as_str(), info.size, info.blocks, info.regions), ("Builder", size, 7 * 5 * 6 - air, 1));
     }
 

@@ -5,37 +5,73 @@ use crate::schematic::{BlockState, Schematic};
 use crate::transform::{Mirror, Rotation, mirror_state, rotate_state, transform_pos};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LayerAxis {
+    X,
+    #[default]
+    Y,
+    Z,
+}
+
+impl LayerAxis {
+    pub fn coord(self, position: [i32; 3]) -> i32 {
+        position[self as usize]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::X => "x",
+            Self::Y => "y",
+            Self::Z => "z",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "x" => Some(Self::X),
+            "y" => Some(Self::Y),
+            "z" => Some(Self::Z),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LayerMode {
     #[default]
     All,
-    /// Only the layer at `y`.
+    /// Only the layer at the indicated coordinate.
     Single(i32),
-    /// `y` and everything above it.
+    /// The coordinate and everything greater along the axis.
     Above(i32),
-    /// `y` and everything below it.
+    /// The coordinate and everything smaller along the axis.
     Below(i32),
     /// From `min` to `max` inclusive.
     Range(i32, i32),
 }
 
 impl LayerMode {
-    pub fn contains(self, y: i32) -> bool {
+    fn limits(self) -> (i32, i32) {
         match self {
-            LayerMode::All => true,
-            LayerMode::Single(l) => y == l,
-            LayerMode::Above(l) => y >= l,
-            LayerMode::Below(l) => y <= l,
-            LayerMode::Range(a, b) => y >= a.min(b) && y <= a.max(b),
+            Self::All => (i32::MIN, i32::MAX),
+            Self::Single(l) => (l, l),
+            Self::Above(l) => (l, i32::MAX),
+            Self::Below(l) => (i32::MIN, l),
+            Self::Range(a, b) => (a.min(b), a.max(b)),
         }
     }
-    /// Moves the layer(s) by `dy`.
-    pub fn shifted(self, dy: i32) -> Self {
+
+    pub fn contains(self, coordinate: i32) -> bool {
+        let (lo, hi) = self.limits();
+        (lo..=hi).contains(&coordinate)
+    }
+
+    pub fn shifted(self, delta: i32) -> Self {
         match self {
             LayerMode::All => LayerMode::All,
-            LayerMode::Single(l) => LayerMode::Single(l.saturating_add(dy)),
-            LayerMode::Above(l) => LayerMode::Above(l.saturating_add(dy)),
-            LayerMode::Below(l) => LayerMode::Below(l.saturating_add(dy)),
-            LayerMode::Range(a, b) => LayerMode::Range(a.saturating_add(dy), b.saturating_add(dy)),
+            LayerMode::Single(l) => LayerMode::Single(l.saturating_add(delta)),
+            LayerMode::Above(l) => LayerMode::Above(l.saturating_add(delta)),
+            LayerMode::Below(l) => LayerMode::Below(l.saturating_add(delta)),
+            LayerMode::Range(a, b) => LayerMode::Range(a.saturating_add(delta), b.saturating_add(delta)),
         }
     }
     pub fn describe(self) -> String {
@@ -46,6 +82,27 @@ impl LayerMode {
             LayerMode::Below(l) => format!("y <= {l}"),
             LayerMode::Range(a, b) => format!("y {}..{}", a.min(b), a.max(b)),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayerFilter {
+    pub axis: LayerAxis,
+    pub mode: LayerMode,
+}
+
+impl LayerFilter {
+    pub fn contains(self, position: [i32; 3]) -> bool {
+        self.mode.contains(self.axis.coord(position))
+    }
+
+    /// Intersect the given inclusive box with the visible layers.
+    pub fn clip_bounds(self, (mut lo, mut hi): ([i32; 3], [i32; 3])) -> Option<([i32; 3], [i32; 3])> {
+        let i = self.axis as usize;
+        let (min, max) = self.mode.limits();
+        lo[i] = lo[i].max(min);
+        hi[i] = hi[i].min(max);
+        (0..3).all(|i| lo[i] <= hi[i]).then_some((lo, hi))
     }
 }
 
@@ -301,6 +358,29 @@ mod tests {
         assert_eq!(LayerMode::Above(3).shifted(2), LayerMode::Above(5));
         assert_eq!(LayerMode::Single(i32::MAX).shifted(1), LayerMode::Single(i32::MAX));
         assert_eq!(LayerMode::Range(i32::MIN, 0).shifted(-1), LayerMode::Range(i32::MIN, -1));
+    }
+
+    #[test]
+    fn layer_filter_uses_world_coordinates_on_each_axis() {
+        assert_eq!(LayerFilter::default().axis, LayerAxis::Y);
+        let (lo, hi) = ([-3, 60, 8], [2, 65, 12]);
+        for (axis, mode, expected) in [
+            (LayerAxis::X, LayerMode::Single(-2), Some(([-2, 60, 8], [-2, 65, 12]))),
+            (LayerAxis::Y, LayerMode::Above(62), Some(([-3, 62, 8], [2, 65, 12]))),
+            (LayerAxis::Z, LayerMode::Range(11, 9), Some(([-3, 60, 9], [2, 65, 11]))),
+            (LayerAxis::X, LayerMode::Below(-4), None),
+        ] {
+            let layer = LayerFilter { axis, mode };
+            assert_eq!(layer.clip_bounds((lo, hi)), expected);
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        let pos = [x, y, z];
+                        assert_eq!(layer.contains(pos), expected.is_some_and(|(a, b)| (0..3).all(|i| (a[i]..=b[i]).contains(&pos[i]))));
+                    }
+                }
+            }
+        }
     }
 
     #[test]

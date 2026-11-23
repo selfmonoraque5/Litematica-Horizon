@@ -13,7 +13,7 @@
 
 use crate::nbt::{self, Tag};
 use crate::bitarray::BitArray;
-use crate::schematic::{BlockState, MAX_VOLUME, Metadata, Region, Schematic, read_state, vec3};
+use crate::schematic::{BlockState, MAX_VOLUME, Metadata, Region, Schematic, read_state, region_bounds, vec3};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -91,10 +91,10 @@ pub fn summary(bytes: &[u8]) -> Result<Summary, String> {
             let mut hi = [i32::MIN; 3];
             for r in regions.values() {
                 let (Some(p), Some(s)) = (vec3(r.get("Position")), vec3(r.get("Size"))) else { continue };
+                let (min, max) = region_bounds(p, s).ok_or("invalid schematic region bounds")?;
                 for i in 0..3 {
-                    let end = p[i] + if s[i] >= 0 { s[i] - 1 } else { s[i] + 1 };
-                    lo[i] = lo[i].min(p[i].min(end));
-                    hi[i] = hi[i].max(p[i].max(end));
+                    lo[i] = lo[i].min(min[i]);
+                    hi[i] = hi[i].max(max[i]);
                 }
             }
             if lo[0] <= hi[0] {
@@ -230,6 +230,9 @@ impl Palette {
 fn sponge(s: &Tag, version: u8) -> Result<Schematic, String> {
     let size = dims(s)?;
     let volume = check_volume(size)? as usize;
+    if volume > 67_108_864 {
+        return Err("Sponge schematic exceeds the 67,108,864-cell import limit".into());
+    }
     let (palette_tag, data_tag, entities_tag) = if version >= 3 {
         let b = s.get("Blocks").ok_or("no Blocks")?;
         (b.get("Palette"), b.get("Data"), b.get("BlockEntities"))
@@ -245,6 +248,9 @@ fn sponge(s: &Tag, version: u8) -> Result<Schematic, String> {
         remap.insert(idx, palette.id(state));
     }
     let Some(Tag::ByteArray(data)) = data_tag else { return Err("no block data".into()) };
+    if data.len() < volume {
+        return Err("block data ends early".into());
+    }
     // The palette is known up front: cells go straight into an array of its width.
     let mut blocks = BitArray::new(BitArray::bits_for(palette.states.len()), volume as u64);
     let mut bytes = data.iter().map(|&b| b as u8);
@@ -286,6 +292,10 @@ fn sponge(s: &Tag, version: u8) -> Result<Schematic, String> {
 fn structure(root: &Tag) -> Result<Schematic, String> {
     let size = pos3(root.get("size")).ok_or("no size")?;
     let volume = check_volume(size)? as usize;
+    // The structure format can declare a huge area without supplying a single cell.
+    if volume > 16_777_216 {
+        return Err("structure exceeds the 16,777,216-cell import limit".into());
+    }
     let file_palette = match root.get("palette").and_then(Tag::list) {
         Some(p) => p,
         // Shipwrecks and the like keep several palettes to pick from: the first one.
@@ -301,7 +311,10 @@ fn structure(root: &Tag) -> Result<Schematic, String> {
         file_palette.iter().map(|t| read_state(t).map(|s| palette.id(s))).collect::<Result<_, _>>()?;
     // Cells the file doesn't list are left alone when placed.
     let void = palette.id(BlockState::new("minecraft:structure_void", &[]));
-    let mut indices = vec![void; volume];
+    let mut packed = BitArray::new(BitArray::bits_for(palette.states.len()), volume as u64);
+    for i in 0..volume as u64 {
+        packed.set(i, void);
+    }
     let mut block_entities = Vec::new();
     for b in root.get("blocks").and_then(Tag::list).unwrap_or(&[]) {
         let Some(p) = pos3(b.get("pos")) else { continue };
@@ -309,14 +322,14 @@ fn structure(root: &Tag) -> Result<Schematic, String> {
             continue;
         }
         let Some(&id) = b.get("state").and_then(Tag::int).and_then(|i| remap.get(i as usize)) else { continue };
-        indices[cell(size, p)] = id;
+        packed.set(cell(size, p) as u64, id);
         if let Some(nbt) = b.get("nbt") {
             block_entities.push((p, nbt.clone()));
         }
     }
     let data_version = root.get("DataVersion").and_then(Tag::int).unwrap_or(OLD_STRUCTURE_DATA_VERSION);
     let author = root.get("author").and_then(Tag::str).unwrap_or("").to_string();
-    let region = Region::from_indices("Main", size, palette.states, &indices, block_entities);
+    let region = Region::from_bits("Main", size, palette.states, packed, block_entities);
     Ok(finish(String::new(), author, data_version, region))
 }
 
@@ -392,6 +405,10 @@ fn clockwise(facing: &str) -> Option<[i32; 3]> {
 fn mcedit(root: &Tag) -> Result<Schematic, String> {
     let size = dims(root)?;
     let volume = check_volume(size)? as usize;
+    // The legacy neighbor pass retains a block state per cell before palette packing.
+    if volume > 2_097_152 {
+        return Err("legacy schematic exceeds the 2,097,152-cell import limit".into());
+    }
     let Some(Tag::ByteArray(blocks)) = root.get("Blocks") else { return Err("no Blocks".into()) };
     let Some(Tag::ByteArray(data)) = root.get("Data") else { return Err("no Data".into()) };
     if blocks.len() < volume || data.len() < volume {
@@ -561,7 +578,7 @@ mod tests {
             ("Palette", compound(palette.clone())),
             ("BlockData", Tag::ByteArray(data.clone())),
         ]);
-        let (s, f) = load(&nbt::write_gzip("Schematic", &v2)).unwrap();
+        let (s, f) = load(&nbt::write_gzip("Schematic", &v2).unwrap()).unwrap();
         assert_eq!(f, Format::Sponge(2));
         assert_eq!(s.data_version, 3465);
         let r = &s.regions[0];
@@ -583,7 +600,7 @@ mod tests {
                 ("Blocks", compound(vec![("Palette", compound(palette)), ("Data", Tag::ByteArray(data))])),
             ]),
         )]);
-        let (s3, f3) = load(&nbt::write_gzip("", &v3)).unwrap();
+        let (s3, f3) = load(&nbt::write_gzip("", &v3).unwrap()).unwrap();
         assert_eq!(f3, Format::Sponge(3));
         assert_eq!(s3.regions[0].state([0, 0, 1]), r.state([0, 0, 1]));
     }
@@ -600,13 +617,23 @@ mod tests {
             ("palette", Tag::List(vec![state("minecraft:dirt"), state("minecraft:air")])),
             ("blocks", Tag::List(vec![block([0, 0, 0], 0), block([1, 1, 0], 1)])),
         ]);
-        let (s, f) = load(&nbt::write_gzip("", &root)).unwrap();
+        let (s, f) = load(&nbt::write_gzip("", &root).unwrap()).unwrap();
         assert_eq!(f, Format::Structure);
         let r = &s.regions[0];
         assert_eq!(r.state([0, 0, 0]).name, "minecraft:dirt");
         assert!(r.state([1, 1, 0]).is_air());
         assert!(r.state([1, 0, 0]).is_void(), "unlisted cells are left alone");
         assert_eq!(s.metadata.total_blocks, 1);
+    }
+
+    #[test]
+    fn sparse_structure_cannot_allocate_an_unbounded_volume() {
+        let root = compound(vec![
+            ("size", Tag::List(vec![Tag::Int(256), Tag::Int(257), Tag::Int(256)])),
+            ("palette", Tag::List(Vec::new())),
+            ("blocks", Tag::List(Vec::new())),
+        ]);
+        assert!(load(&nbt::write_gzip("", &root).unwrap()).unwrap_err().contains("import limit"));
     }
 
     #[test]
@@ -624,7 +651,7 @@ mod tests {
             ("Blocks", Tag::ByteArray(blocks)),
             ("Data", Tag::ByteArray(data)),
         ]);
-        let (s, f) = load(&nbt::write_gzip("Schematic", &root)).unwrap();
+        let (s, f) = load(&nbt::write_gzip("Schematic", &root).unwrap()).unwrap();
         assert_eq!(f, Format::McEdit);
         assert_eq!(s.data_version, FLATTENED_DATA_VERSION);
         let r = &s.regions[0];
@@ -652,7 +679,7 @@ mod tests {
             ("Blocks", Tag::ByteArray(vec![54, 54])),
             ("Data", Tag::ByteArray(vec![3, 3])),
         ]);
-        let (s, _) = load(&nbt::write_gzip("Schematic", &root)).unwrap();
+        let (s, _) = load(&nbt::write_gzip("Schematic", &root).unwrap()).unwrap();
         let r = &s.regions[0];
         assert_eq!(r.state([0, 0, 0]).prop("facing"), Some("south"));
         // Facing south, clockwise is west: the chest at x=1 has its partner at x=0 (left).

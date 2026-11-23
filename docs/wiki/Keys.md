@@ -10,11 +10,11 @@ The defaults:
 | Key | Action | Command |
 |---|---|---|
 | **M** | Opens the menu | — |
-| **V** | Rendering on or off | `/hm render` |
-| **Page Up** / **Page Down** | Layer up / down | `/hm layer up`, `/hm layer down` |
+| **V** | Rendering on or off | `/lm render` |
+| **Page Up** / **Page Down** | Layer up / down | `/lm layer up`, `/lm layer down` |
 | **Home** | Next layer mode: all, this layer, above, below | — |
-| **K** | Printer on or off | `/hm printer` |
-| **J** | Material list in the HUD on or off | `/hm materials` |
+| **K** | Printer on or off | `/lm printer` |
+| **J** | Material list in the HUD on or off | `/lm materials` |
 | **N** | Move mode on or off | — |
 | **Middle mouse button** | Takes the block the schematic wants where you look, see below | — |
 
@@ -28,7 +28,7 @@ placement, unload, area corners and clear, copy material list, open schematics f
 | **1** to **7** | Switch tabs (while no edit box is being typed in) |
 | **M**, **Esc** | Close the menu |
 
-Things that need a file or a name, such as loading a schematic or `/hm save <name>`, have no key. In the menu itself
+Things that need a file or a name, such as loading a schematic or `/lm save <name>`, have no key. In the menu itself
 **M** and **1** to **7** keep their meaning whatever is bound.
 
 ## Move mode

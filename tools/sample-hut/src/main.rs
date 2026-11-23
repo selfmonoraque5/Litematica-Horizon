@@ -2,8 +2,8 @@
 //! A 7x5x7 stone-brick hut with oak stairs, a door, a furnace, a chest and a lantern: directional
 //! blocks to check the overlay, the verifier and the printer's facing.
 
-use horizonmatica_core::schematic::{Metadata, Region};
-use horizonmatica_core::{BlockState, Schematic};
+use litematica_horizon_core::schematic::{Metadata, Region};
+use litematica_horizon_core::{BlockState, Schematic};
 
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| "sample_hut.litematic".into());
@@ -38,7 +38,7 @@ fn main() {
         data_version: 4671,
         metadata: Metadata {
             name: "Sample hut".into(),
-            author: "horizonmatica".into(),
+            author: "litematica_horizon".into(),
             description: "Test schematic".into(),
             region_count: 1,
             total_volume: 7 * 5 * 7,
@@ -48,6 +48,6 @@ fn main() {
         regions: vec![region],
     };
     schematic.metadata.total_blocks = schematic.block_count() as i64;
-    std::fs::write(&out, schematic.to_bytes()).expect("write");
+    std::fs::write(&out, schematic.to_bytes().expect("encode schematic")).expect("write");
     println!("wrote {out} ({} blocks)", schematic.metadata.total_blocks);
 }

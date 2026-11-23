@@ -1,5 +1,5 @@
 //! The mod's texts in the player's language. Every text the mod shows (menu, HUD, chat) has a key
-//! in `assets/horizonmatica/lang/`; the game's language layers give its text (`translate`), with
+//! in `assets/litematica_horizon/lang/`; the game's language layers give its text (`translate`), with
 //! the English file built into the mod as the fallback.
 //!
 //! `refresh` (each client tick, each menu frame) reads the whole table again when the game's
@@ -12,14 +12,14 @@ use std::fmt::Display;
 use std::sync::{LazyLock, Mutex, RwLock};
 
 /// The English texts, built in.
-const EN_JSON: &str = include_str!("../assets/horizonmatica/lang/en_us.json");
+const EN_JSON: &str = include_str!("../assets/litematica_horizon/lang/en_us.json");
 
-/// The English texts by key without the `horizonmatica.` prefix (as `tr!` takes them).
+/// The English texts by key without the `litematica_horizon.` prefix (as `tr!` takes them).
 static EN: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     parse(EN_JSON).into_iter().filter_map(|(k, v)| Some((k.strip_prefix(PREFIX)?.to_string(), v))).collect()
 });
 
-const PREFIX: &str = "horizonmatica.";
+const PREFIX: &str = "litematica_horizon.";
 
 #[derive(Default)]
 struct Table {
@@ -69,7 +69,7 @@ pub fn refresh(host: &dyn ClientHost) {
     }
 }
 
-/// The text for `key` (without the `horizonmatica.` prefix; the key itself when no file has it).
+/// The text for `key` (without the `litematica_horizon.` prefix; the key itself when no file has it).
 pub fn t(key: &str) -> String {
     if let Ok(t) = TABLE.read()
         && let Some(v) = t.texts.get(key)
@@ -120,7 +120,7 @@ fn format_args_in(template: &str, args: &[&dyn Display]) -> String {
 }
 
 /// `tr!("key")` or `tr!("key", a, b)`: the text in the player's language (`key` without the
-/// `horizonmatica.` prefix).
+/// `litematica_horizon.` prefix).
 #[macro_export]
 macro_rules! tr {
     ($key:expr) => {

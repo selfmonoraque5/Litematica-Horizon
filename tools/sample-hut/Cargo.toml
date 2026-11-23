@@ -3,8 +3,8 @@ name = "sample-hut"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Writes sample_hut.litematic, a small test schematic for Horizonmatica"
+description = "Writes sample_hut.litematic, a small test schematic for Litematica for Horizon"
 publish = false
 
 [dependencies]
-horizonmatica-core = { path = "../../hmod/src/core" }
+litematica-horizon-core = { path = "../../hmod/src/core" }

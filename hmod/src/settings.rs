@@ -1,12 +1,12 @@
 //! The mod's settings: registered with the game (they show on the mod's page in Options > Mods,
-//! labelled from `assets/horizonmatica/lang/`), read and written through the host. A few values
+//! labelled from `assets/litematica_horizon/lang/`), read and written through the host. A few values
 //! the menu's sliders can't hold (any render radius, any face limit, the tool's item) are kept in
 //! the mod's data files instead (`store`).
 
 use crate::store;
 use crate::world::World;
 use crate::ID;
-use horizonmatica_core::printer::PrinterSettings;
+use litematica_horizon_core::printer::PrinterSettings;
 use mod_api::{Registrar, SettingSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,7 +162,7 @@ pub fn register(r: &mut dyn Registrar) {
             Kind::Range(min, max, step, default) => SettingSpec::range(key, label, min, max, step, default),
         };
         if let Err(e) = r.register_setting(spec) {
-            eprintln!("[Horizonmatica] setting {key} refused: {e:?}");
+            eprintln!("[Litematica for Horizon] setting {key} refused: {e:?}");
         }
     }
 }

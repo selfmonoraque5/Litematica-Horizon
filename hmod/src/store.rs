@@ -1,7 +1,7 @@
 //! The mod's own files: values the settings can't hold and where each world's placements are,
-//! in the mod's data folder (`<game>/horizon-mod-data/horizonmatica/`), and the schematics folder
+//! in the mod's data folder (`<game>/horizon-mod-data/litematica/`), and the schematics folder
 //! (`<game>/schematics/`, as Litematica's). Versions before 0.4.0 kept all of it among the
-//! settings (`horizon-mods/.horizon-mod-data/horizonmatica/<key>`): what isn't in the data
+//! settings (`horizon-mods/.horizon-mod-data/litematica/<key>`): what isn't in the data
 //! folder yet is read from there.
 
 use crate::world::World;
@@ -43,7 +43,7 @@ pub fn read_value(w: &World<'_>, key: &str) -> Option<String> {
 pub fn write_value(w: &World<'_>, key: &str, value: &str) {
     let Ok(path) = ConfigPath::new(&file_name(key)) else { return };
     if let Err(e) = w.host.data_files().write(&path, value.as_bytes()) {
-        eprintln!("[Horizonmatica] can't keep {key}: {e:?}");
+        eprintln!("[Litematica for Horizon] can't keep {key}: {e:?}");
     }
 }
 

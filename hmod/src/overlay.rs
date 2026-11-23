@@ -19,7 +19,8 @@
 use crate::runtime::{self, Grab, Resolved};
 use crate::settings::Mode;
 use crate::world::{StateId, World};
-use horizonmatica_core::verify::Status;
+use litematica_horizon_core::placement::LayerFilter;
+use litematica_horizon_core::verify::Status;
 use mod_api::ClientHost;
 use std::any::Any;
 use std::cell::RefCell;
@@ -221,7 +222,7 @@ struct Mesh {
     cubes: HashMap<StateId, bool>,
 }
 
-type MeshKey = (u64, horizonmatica_core::LayerMode, Mode, bool, bool, bool, bool, u32, bool);
+type MeshKey = (u64, LayerFilter, Mode, bool, bool, bool, bool, u32, bool);
 
 thread_local! {
     static MESH: RefCell<Mesh> = RefCell::new(Mesh::default());
@@ -296,7 +297,7 @@ fn rebuild(w: &World<'_>, ops: &dyn GameOps) {
     let Some((key, anchor, boxes, radius, limit)) = runtime::with(|s| {
         let st = &s.settings;
         let key: MeshKey = (s.rev, s.layer, st.mode, st.show_extra, st.show_wrong, st.strict, st.power, st.alpha.to_bits(), st.hide_fluids);
-        let boxes: Vec<_> = s.slots.iter().filter(|x| x.shown).map(|x| x.placement.bounds()).collect();
+        let boxes: Vec<_> = s.slots.iter().filter(|x| x.shown).filter_map(|x| s.layer.clip_bounds(x.placement.bounds())).collect();
         // Positions are relative to the placements' corner, else (only an area) the area's.
         let anchor = s
             .shown_bounds()
@@ -438,6 +439,7 @@ fn build_section(w: &World<'_>, ops: &dyn GameOps, k: [i32; 3]) -> Vec<Vertex> {
         let layer = s.layer;
         let a = [0, 1, 2].map(|i| (k[i] * 16).max(lo[i]));
         let b = [0, 1, 2].map(|i| (k[i] * 16 + 15).min(hi[i]));
+        let Some((a, b)) = layer.clip_bounds((a, b)) else { return };
         // What each cell of the section and the layer of cells around it shows, as far as it
         // hides a neighbour's face: `NOTHING`, `CUBE` (a ghost full cube) or 2/3 (a ghost
         // water/lava). Filled in while building, the border on demand; `UNKNOWN` until then.
@@ -467,9 +469,6 @@ fn build_section(w: &World<'_>, ops: &dyn GameOps, k: [i32; 3]) -> Vec<Vertex> {
         // Per quad: the block it belongs to, and what that block shows.
         let mut blocks: Vec<([i32; 3], u8)> = Vec::new();
         for y in a[1]..=b[1] {
-            if !layer.contains(y) {
-                continue;
-            }
             for z in a[2]..=b[2] {
                 for x in a[0]..=b[0] {
                     let p = [x, y, z];
@@ -534,7 +533,7 @@ fn build_section(w: &World<'_>, ops: &dyn GameOps, k: [i32; 3]) -> Vec<Vertex> {
         let mut shows_at = |p: [i32; 3]| -> u8 {
             let Some(c) = cell(p) else { return NOTHING };
             if shows[c] == UNKNOWN {
-                shows[c] = if layer.contains(p[1]) {
+                shows[c] = if layer.contains(p) {
                     runtime::quick_status(w, s, p).map_or(NOTHING, |(st, _, res)| class(st, &res))
                 } else {
                     NOTHING
@@ -624,7 +623,7 @@ fn marks_step(w: &World<'_>, ops: &dyn GameOps) {
     let start = Instant::now();
     let (key, boxes) = runtime::with(|s| {
         let key = (s.settings.highlight_missing, s.settings.highlight_wrong, s.highlight_item.clone());
-        let boxes: Vec<_> = s.slots.iter().filter(|x| x.shown).map(|x| x.placement.bounds()).collect();
+        let boxes: Vec<_> = s.slots.iter().filter(|x| x.shown).filter_map(|x| s.layer.clip_bounds(x.placement.bounds())).collect();
         (key, boxes)
     });
     let on = key.0 || key.1;
@@ -734,13 +733,10 @@ fn build_marks(w: &World<'_>, ops: &dyn GameOps, k: [i32; 3]) -> (Vec<Vertex>, u
         let (missing, wrong) = (s.settings.highlight_missing, s.settings.highlight_wrong);
         let hide_fluids = s.settings.hide_fluids;
         let only = s.highlight_item.clone();
-        let layer = s.layer;
         let a = [0, 1, 2].map(|i| (k[i] * 16).max(lo[i]));
         let b = [0, 1, 2].map(|i| (k[i] * 16 + 15).min(hi[i]));
+        let Some((a, b)) = s.layer.clip_bounds((a, b)) else { return };
         for y in a[1]..=b[1] {
-            if !layer.contains(y) {
-                continue;
-            }
             for z in a[2]..=b[2] {
                 for x in a[0]..=b[0] {
                     let p = [x, y, z];

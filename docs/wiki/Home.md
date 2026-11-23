@@ -1,9 +1,9 @@
-# Horizonmatica wiki
+# Litematica for Horizon wiki
 
 Every button, slider and switch of the menu, what it does, and the command that does the same (where there is one).
 
 Press **M** in game to open the menu. **1–7** switch tabs; **Esc**, **M** or **Done** close it. The game keeps running
-behind it. All commands start with `/horizonmatica` or the short form `/hm`.
+behind it. All commands start with `/litematica` or the short form `/lm`.
 
 ## The tabs
 
@@ -16,7 +16,7 @@ behind it. All commands start with `/horizonmatica` or the short form `/hm`.
 | 5 | [Printer](Printer.md) | The auto-builder |
 | 6 | [Display](Display.md) | How the overlay and the HUD look, and how far the overlay reaches |
 | 7 | [Materials](Materials.md) | What the selected placement still needs; highlight missing and wrong blocks |
-| — | Credits (button at the top left) | The originals and their authors. **Show the credits in chat** does the same as `/hm credits` |
+| — | Credits (button at the top left) | The originals and their authors. **Show the credits in chat** does the same as `/lm credits` |
 
 Every tab also has **Done** at the bottom right, which closes the menu.
 
@@ -29,7 +29,7 @@ Every tab also has **Done** at the bottom right, which closes the menu.
 
 - **Placement:** a loaded schematic at a place in the world. Several can be loaded at once.
 - **Selected placement:** the one that most buttons and commands act on. The HUD and the material list show it too.
-- **Area selection:** the box between two corners that you save with `/hm save`. It has nothing to do with placements.
+- **Area selection:** the box between two corners that you save with `/lm save`. It has nothing to do with placements.
 - **Origin:** the position a placement is anchored at. Moving a placement means moving its origin.
 - **Face:** one side of a ghost block. Faces cost video memory, so their number has a limit.
 

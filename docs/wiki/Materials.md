@@ -7,8 +7,8 @@ its list.
 
 | Control | What it does | Command |
 |---|---|---|
-| **Copy** | Copies the list to the clipboard as a table | `/hm materials copy` |
-| **HUD list: ON/OFF** | The list in the corner while playing | `/hm materials [on\|off]`, key **J** |
+| **Copy** | Copies the list to the clipboard as a table | `/lm materials copy` |
+| **HUD list: ON/OFF** | The list in the corner while playing | `/lm materials [on\|off]`, key **J** |
 
 ## Highlighting blocks
 
@@ -16,12 +16,12 @@ The row below the buttons marks blocks so that you can see them through everythi
 
 | Control | What it does | Command |
 |---|---|---|
-| **Missing: ON/OFF** | Marks missing blocks in blue | `/hm highlight missing [on\|off]` |
-| **Wrong: ON/OFF** | Marks wrong blocks in red and wrong states in orange | `/hm highlight wrong [on\|off]` |
-| A row of the list | Marks only that item. Click it again to mark all items | `/hm highlight item <item>` |
-| The button with the item's name | Marks all items again | `/hm highlight item all` |
+| **Missing: ON/OFF** | Marks missing blocks in blue | `/lm highlight missing [on\|off]` |
+| **Wrong: ON/OFF** | Marks wrong blocks in red and wrong states in orange | `/lm highlight wrong [on\|off]` |
+| A row of the list | Marks only that item. Click it again to mark all items | `/lm highlight item <item>` |
+| The button with the item's name | Marks all items again | `/lm highlight item all` |
 
-- `/hm highlight off` switches everything off.
+- `/lm highlight off` switches everything off.
 - The filter goes by the item that belongs at that spot. With **Stone** picked, **Wrong** marks spots where stone should
   be but another block is.
 - Clicking a row switches **Missing** on if neither is on.

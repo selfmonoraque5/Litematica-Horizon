@@ -11,23 +11,23 @@ There is one row for **Corner 1** and one for **Corner 2**. Below them, the tab 
 
 | Control | What it does | Command (`pos2` for corner 2) |
 |---|---|---|
-| x, y, z and **Set** | Puts the corner at the typed position | `/hm pos1 <x> <y> <z>` |
-| **Look** | Puts it on the block you look at, up to 64 blocks away. If you look at nothing in range, it uses where you stand | `/hm pos1` |
-| **Here** | Puts it on the block you stand in | `/hm pos1 here` |
+| x, y, z and **Set** | Puts the corner at the typed position | `/lm pos1 <x> <y> <z>` |
+| **Look** | Puts it on the block you look at, up to 64 blocks away. If you look at nothing in range, it uses where you stand | `/lm pos1` |
+| **Here** | Puts it on the block you stand in | `/lm pos1 here` |
 
 ## Saving
 
 | Control | What it does | Command |
 |---|---|---|
 | **Name** | The file name, without its extension | — |
-| **Save** | Starts saving. It is greyed out until both corners and a valid name are set | `/hm save <name>` |
-| **Overwrite** (replaces Save) | When the file exists, the first click on Save only warns you. The second click overwrites it | `/hm save <name> overwrite` |
-| **Cancel** (replaces Save while saving) | Stops the save. Nothing is written | `/hm save cancel` |
-| **Clear selection** | Removes both corners | `/hm area clear` |
-| **Open folder** | Opens the schematics folder | `/hm folder` only prints the path in chat |
+| **Save** | Starts saving. It is greyed out until both corners and a valid name are set | `/lm save <name>` |
+| **Overwrite** (replaces Save) | When the file exists, the first click on Save only warns you. The second click overwrites it | `/lm save <name> overwrite` |
+| **Cancel** (replaces Save while saving) | Stops the save. Nothing is written | `/lm save cancel` |
+| **Clear selection** | Removes both corners | `/lm area clear` |
+| **Open folder** | Opens the schematics folder | `/lm folder` only prints the path in chat |
 | **Selection tool: ... · settings** | Opens the [Tool tab](Tool.md) | — |
 
-`/hm area` prints the corners and size in chat, and `/hm save status` prints how far a save has got.
+`/lm area` prints the corners and size in chat, and `/lm save status` prints how far a save has got.
 
 ## How a save runs
 

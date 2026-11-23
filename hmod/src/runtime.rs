@@ -1,15 +1,16 @@
-//! Horizonmatica's state and everything it does each tick, on commands, keys and clicks. The game
-//! is read through `World` (the mod API); the game-independent logic is `horizonmatica_core`.
+//! Litematica for Horizon's state and everything it does each tick, on commands, keys and clicks. The game
+//! is read through `World` (the mod API); the game-independent logic is `litematica_horizon_core`.
 
 use crate::settings::{self, Mode, Settings};
 use crate::store;
 use crate::world::{Blocks, StateId, World};
 use crate::i18n::{item_name, on_off as on_off_text};
-use horizonmatica_core::formats::Format;
-use horizonmatica_core::materials::{self, Material};
-use horizonmatica_core::printer::{Recent, Stuck};
-use horizonmatica_core::verify::{self, Status, Tally};
-use horizonmatica_core::{BlockState, LayerMode, Mirror, Placement, Rotation, Schematic};
+use litematica_horizon_core::formats::Format;
+use litematica_horizon_core::materials::{self, Material};
+use litematica_horizon_core::placement::{LayerAxis, LayerFilter};
+use litematica_horizon_core::printer::{Recent, Stuck};
+use litematica_horizon_core::verify::{self, Status, Tally};
+use litematica_horizon_core::{BlockState, LayerMode, Mirror, Placement, Rotation, Schematic};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
@@ -83,9 +84,9 @@ pub struct State {
     /// (`sync_rev`): everything built from them is stale.
     pub rev: u64,
     rev_of: Vec<(u64, u64, bool)>,
-    /// The area selection's two corners (`/hm pos1`, `/hm pos2`), saved with `/hm save`.
+    /// The area selection's two corners (`/lm pos1`, `/lm pos2`), saved with `/lm save`.
     pub area: [Option<[i32; 3]>; 2],
-    pub layer: LayerMode,
+    pub layer: LayerFilter,
     pub blocks: Blocks,
     /// Item per wanted state (None: no item, such as air or fire).
     items: HashMap<BlockState, Option<String>>,
@@ -109,7 +110,7 @@ pub struct State {
     loads: Vec<LoadJob>,
     /// Files a memory warning was given for, and when: loading them again soon loads them anyway.
     memory_warned: Option<(Vec<String>, std::time::Instant)>,
-    /// The save under way (`/hm save`), and the file its thread is writing.
+    /// The save under way (`/lm save`), and the file its thread is writing.
     pub save: Option<SaveJob>,
     save_write: Option<SaveWrite>,
     /// What the selection tool's wheel moves, and the mouse buttons whose press it took.
@@ -185,9 +186,9 @@ impl State {
     /// The area selection's size in blocks, checked (`None` without both corners).
     pub fn area_size(&self) -> Option<[i32; 3]> {
         let [Some(a), Some(b)] = self.area else { return None };
-        horizonmatica_core::area::size(a, b)
+        litematica_horizon_core::area::size(a, b)
     }
-    /// Drops every placement (another world, `/hm unload all`).
+    /// Drops every placement (another world, `/lm unload all`).
     fn drop_all(&mut self) {
         reset_caches(self);
         self.slots.clear();
@@ -207,7 +208,7 @@ pub fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 /// Queues a chat line (`flush` sends it).
 pub fn say(text: &str) {
-    with(|s| s.out.push(format!("[Horizonmatica] {text}")));
+    with(|s| s.out.push(format!("[Litematica for Horizon] {text}")));
 }
 
 /// The chat lines queued, to send.
@@ -233,14 +234,14 @@ fn no_world() -> String {
 
 /// A placement's move that would leave the world, in words.
 fn outside_world() -> String {
-    use horizonmatica_core::area::{MAX_XZ, MAX_Y, MIN_XZ, MIN_Y};
+    use litematica_horizon_core::area::{MAX_XZ, MAX_Y, MIN_XZ, MIN_Y};
     tr!("err.outside_world", MIN_XZ, MAX_XZ, MIN_Y, MAX_Y)
 }
 
 /// A corner where a world has blocks, else the coordinate that is out, in words.
 fn check_corner(c: [i32; 3]) -> Result<[i32; 3], String> {
-    use horizonmatica_core::area::{MAX_XZ, MAX_Y, MIN_XZ, MIN_Y};
-    horizonmatica_core::area::check_corner(c).map_err(|_| {
+    use litematica_horizon_core::area::{MAX_XZ, MAX_Y, MIN_XZ, MIN_Y};
+    litematica_horizon_core::area::check_corner(c).map_err(|_| {
         let (lo, hi) = ([MIN_XZ, MIN_Y, MIN_XZ], [MAX_XZ, MAX_Y, MAX_XZ]);
         let k = (0..3).find(|&k| !(lo[k]..=hi[k]).contains(&c[k])).unwrap_or(0);
         tr!("err.coordinate_range", ["x", "y", "z"][k], lo[k], hi[k], c[k])
@@ -258,13 +259,19 @@ pub fn mirror_text(m: Mirror) -> String {
 }
 
 /// The layers shown, in words.
-pub fn layer_text(l: LayerMode) -> String {
-    match l {
-        LayerMode::All => tr!("layer.all"),
-        LayerMode::Single(y) => tr!("layer.single", y),
-        LayerMode::Above(y) => tr!("layer.above", y),
-        LayerMode::Below(y) => tr!("layer.below", y),
-        LayerMode::Range(a, b) => tr!("layer.range", a.min(b), a.max(b)),
+pub fn layer_text(layer: LayerFilter) -> String {
+    let axis = layer.axis.name();
+    match (layer.axis, layer.mode) {
+        (LayerAxis::Y, LayerMode::All) => tr!("layer.all"),
+        (LayerAxis::Y, LayerMode::Single(y)) => tr!("layer.single", y),
+        (LayerAxis::Y, LayerMode::Above(y)) => tr!("layer.above", y),
+        (LayerAxis::Y, LayerMode::Below(y)) => tr!("layer.below", y),
+        (LayerAxis::Y, LayerMode::Range(a, b)) => tr!("layer.range", a.min(b), a.max(b)),
+        (_, LayerMode::All) => format!("{} ({axis})", tr!("layer.all")),
+        (_, LayerMode::Single(n)) => format!("{axis} = {n}"),
+        (_, LayerMode::Above(n)) => format!("{axis} >= {n}"),
+        (_, LayerMode::Below(n)) => format!("{axis} <= {n}"),
+        (_, LayerMode::Range(a, b)) => format!("{axis} {}..{}", a.min(b), a.max(b)),
     }
 }
 
@@ -312,7 +319,7 @@ pub fn render_radius(w: &World<'_>, st: &Settings) -> i32 {
 /// Where a saved placement goes: origin, rotation, mirror.
 type At = ([i32; 3], Rotation, Mirror);
 
-/// Saves where the placements are: the selected one as the last one (`/hm reload`), all of them
+/// Saves where the placements are: the selected one as the last one (`/lm reload`), all of them
 /// as this world's, which come back when the world is joined again.
 ///
 /// A world's value is `v2`, the selected index, then one line per placement:
@@ -545,16 +552,13 @@ struct ReadFile {
 }
 
 fn read_file(dir: &std::path::Path, query: &str) -> Result<ReadFile, String> {
-    let file = horizonmatica_core::find_schematic(dir, query)?;
-    let out_of_memory = || tr!("err.out_of_memory", &file);
-    let bytes = std::fs::read(dir.join(&file)).map_err(|e| match e.kind() {
-        std::io::ErrorKind::OutOfMemory => out_of_memory(),
+    let file = litematica_horizon_core::find_schematic(dir, query)?;
+    let read_error = |e: String| match e.as_str() {
+        litematica_horizon_core::nbt::OUT_OF_MEMORY => tr!("err.out_of_memory", &file),
         _ => format!("{file}: {e}"),
-    })?;
-    let (mut schematic, format) = horizonmatica_core::formats::load(&bytes).map_err(|e| match e.as_str() {
-        horizonmatica_core::nbt::OUT_OF_MEMORY => out_of_memory(),
-        _ => format!("{file}: {e}"),
-    })?;
+    };
+    let bytes = litematica_horizon_core::nbt::read_input(&dir.join(&file)).map_err(read_error)?;
+    let (mut schematic, format) = litematica_horizon_core::formats::load(&bytes).map_err(read_error)?;
     drop(bytes);
     let from_version = schematic.data_version;
     let upgraded = crate::fix::upgrade(&mut schematic);
@@ -564,9 +568,9 @@ fn read_file(dir: &std::path::Path, query: &str) -> Result<ReadFile, String> {
 
 /// What becomes of files once they are read.
 enum Then {
-    /// `/hm load`: a new placement, selected.
+    /// `/lm load`: a new placement, selected.
     Load,
-    /// `/hm reload`: replaces the placement of that file at that place, else a new one.
+    /// `/lm reload`: replaces the placement of that file at that place, else a new one.
     Reload,
     /// Joining a world: its placements back, each shown or hidden, and the one selected.
     Restore { flags: Vec<(bool, bool)>, selected: usize },
@@ -602,7 +606,7 @@ const WARNED_FOR: std::time::Duration = std::time::Duration::from_secs(60);
 /// same files were warned about a moment ago (then they load anyway). Never a limit of its own.
 fn memory_warning(dir: &std::path::Path, queries: &[String]) -> Option<String> {
     let room = crate::memory::Room::now()?;
-    let names: Vec<String> = queries.iter().filter_map(|q| horizonmatica_core::find_schematic(dir, q).ok()).collect();
+    let names: Vec<String> = queries.iter().filter_map(|q| litematica_horizon_core::find_schematic(dir, q).ok()).collect();
     let need = names.iter().filter_map(|f| crate::memory::need(&dir.join(f))).fold(0u64, u64::saturating_add);
     if room.fits(need) {
         return None;
@@ -633,7 +637,7 @@ fn start_load(w: &World<'_>, files: Vec<(String, At)>, then: Then) -> Result<Vec
     let queries: Vec<String> = files.iter().map(|(f, _)| f.clone()).collect();
     let bytes = queries
         .iter()
-        .filter_map(|q| horizonmatica_core::find_schematic(&dir, q).ok())
+        .filter_map(|q| litematica_horizon_core::find_schematic(&dir, q).ok())
         .filter_map(|f| std::fs::metadata(dir.join(f)).ok())
         .map(|m| m.len())
         .sum();
@@ -645,7 +649,7 @@ fn start_load(w: &World<'_>, files: Vec<(String, At)>, then: Then) -> Result<Vec
     }
     let (tx, done) = std::sync::mpsc::channel();
     std::thread::Builder::new()
-        .name("horizonmatica-load".into())
+        .name("litematica_horizon-load".into())
         .spawn(move || {
             let _ = tx.send(queries.iter().map(|q| read_file(&dir, q)).collect());
         })
@@ -711,7 +715,7 @@ fn finish_load(w: &World<'_>, job: LoadJob, read: Vec<Result<ReadFile, String>>)
             let count = with(|s| {
                 s.slots.push(slot);
                 s.selected = s.slots.len() - 1;
-                s.layer = LayerMode::All;
+                s.layer.mode = LayerMode::All;
                 s.moving = false;
                 s.slots.len()
             });
@@ -852,7 +856,7 @@ pub const WORDS: &[(&str, &[&str], Option<&str>)] = &[
     ("area", &["clear"], None),
     ("save", &["status", "cancel"], Some("name")),
     ("tool", &["on", "off", "mode"], Some("item")),
-    ("layer", &["all", "up", "down", "here", "above", "below", "range"], Some("y")),
+    ("layer", &["all", "up", "down", "here", "above", "below", "range", "axis", "axis x", "axis y", "axis z"], Some("coordinate")),
     ("render", &["on", "off"], None),
     ("through", &["on", "off"], None),
     ("highlight", &["missing", "wrong", "item", "off"], None),
@@ -868,17 +872,17 @@ pub const WORDS: &[(&str, &[&str], Option<&str>)] = &[
     ("credits", &[], None),
 ];
 
-/// `/hm help`'s lines (the commands' words stay English; what they do is translated).
+/// `/lm help`'s lines (the commands' words stay English; what they do is translated).
 fn help_lines() -> Vec<String> {
     (1..=13).map(|i| tr!(&format!("help.{i}"))).collect()
 }
 
-/// Runs `/horizonmatica …`; true when the command was ours.
+/// Runs `/litematica …`; true when the command was ours.
 pub fn command(w: &World<'_>, line: &str) -> bool {
     let line = line.trim_start_matches('/');
     let mut words = line.split_whitespace();
     match words.next() {
-        Some("horizonmatica" | "hm") => {}
+        Some("litematica" | "lm") => {}
         _ => return false,
     }
     let args: Vec<&str> = words.collect();
@@ -914,7 +918,7 @@ fn selected_mut(s: &mut State) -> Result<&mut Placement, String> {
     s.placement_mut().ok_or_else(|| tr!("err.no_selected"))
 }
 
-/// A placement by its number in `/hm placements` (from 1), else by (the start of) its name.
+/// A placement by its number in `/lm placements` (from 1), else by (the start of) its name.
 fn find_slot(s: &State, query: &str) -> Result<usize, String> {
     if let Ok(n) = query.parse::<usize>() {
         return (1..=s.slots.len()).contains(&n).then(|| n - 1).ok_or_else(|| tr!("err.no_placement_n", n, s.slots.len()));
@@ -933,7 +937,7 @@ fn find_slot(s: &State, query: &str) -> Result<usize, String> {
     }
 }
 
-/// One line per placement for `/hm placements`.
+/// One line per placement for `/lm placements`.
 fn placement_lines(s: &State) -> Vec<String> {
     s.slots
         .iter()
@@ -972,7 +976,7 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
         }
         "list" => {
             let dir = store::schematics_dir(w)?;
-            let names = horizonmatica_core::list_schematics(&dir);
+            let names = litematica_horizon_core::list_schematics(&dir);
             if names.is_empty() {
                 return Ok(vec![tr!("chat.no_files", dir.display())]);
             }
@@ -1228,30 +1232,40 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
             changed(w);
             Ok(vec![tr!("chat.mirror", mirror_text(m))])
         }
+        "layer" if rest.first() == Some(&"axis") => {
+            let [_, name] = rest else { return Err("Usage: /lm layer axis x|y|z".into()) };
+            let axis = LayerAxis::parse(name).ok_or("Usage: /lm layer axis x|y|z")?;
+            let layer = with(|s| {
+                s.layer.axis = axis;
+                s.layer
+            });
+            Ok(vec![tr!("chat.layers", layer_text(layer))])
+        }
         "layer" => {
-            let feet_y = w.feet().map_or(64, |f| f[1]);
+            let feet = w.feet().unwrap_or([0, 64, 0]);
             let l = with(|s| {
                 need_placement(s)?;
-                let base = s.placement().ok_or_else(|| tr!("err.no_selected"))?.bounds().0[1];
-                let current = match s.layer {
+                let axis = s.layer.axis;
+                let base = axis.coord(s.placement().ok_or_else(|| tr!("err.no_selected"))?.bounds().0);
+                let current = match s.layer.mode {
                     LayerMode::All => base,
-                    LayerMode::Single(y) | LayerMode::Above(y) | LayerMode::Below(y) | LayerMode::Range(y, _) => y,
+                    LayerMode::Single(n) | LayerMode::Above(n) | LayerMode::Below(n) | LayerMode::Range(n, _) => n,
                 };
-                s.layer = match rest.first().copied() {
+                s.layer.mode = match rest.first().copied() {
                     None | Some("all") => LayerMode::All,
-                    Some("up") => match s.layer {
+                    Some("up") => match s.layer.mode {
                         LayerMode::All => LayerMode::Single(base),
                         l => l.shifted(1),
                     },
-                    Some("down") => match s.layer {
+                    Some("down") => match s.layer.mode {
                         LayerMode::All => LayerMode::Single(base),
                         l => l.shifted(-1),
                     },
-                    Some("here") => LayerMode::Single(feet_y),
-                    Some("above") => LayerMode::Above(rest.get(1).map_or(Ok(current), |_| int(rest.get(1), "y"))?),
-                    Some("below") => LayerMode::Below(rest.get(1).map_or(Ok(current), |_| int(rest.get(1), "y"))?),
-                    Some("range") => LayerMode::Range(int(rest.get(1), &tr!("word.min_y"))?, int(rest.get(2), &tr!("word.max_y"))?),
-                    Some(_) => LayerMode::Single(int(rest.first(), "y")?),
+                    Some("here") => LayerMode::Single(axis.coord(feet)),
+                    Some("above") => LayerMode::Above(rest.get(1).map_or(Ok(current), |_| int(rest.get(1), axis.name()))?),
+                    Some("below") => LayerMode::Below(rest.get(1).map_or(Ok(current), |_| int(rest.get(1), axis.name()))?),
+                    Some("range") => LayerMode::Range(int(rest.get(1), axis.name())?, int(rest.get(2), axis.name())?),
+                    Some(_) => LayerMode::Single(int(rest.first(), axis.name())?),
                 };
                 Ok::<_, String>(s.layer)
             })?;
@@ -1428,9 +1442,9 @@ fn open_folder(dir: &std::path::Path) {
 // ---------------------------------------------------------------- keys
 
 /// Everything a key can do: (id, label, default key). Registered as the game's key mappings
-/// (Options > Controls > Horizonmatica); the id is the action's (`action`).
+/// (Options > Controls > Litematica for Horizon); the id is the action's (`action`).
 pub const BINDS: &[(&str, &str, &str)] = &[
-    ("open_menu", "Open the Horizonmatica menu", "key.keyboard.m"),
+    ("open_menu", "Open the Litematica for Horizon menu", "key.keyboard.m"),
     ("toggle_render", "Toggle schematic rendering", "key.keyboard.v"),
     ("layer_up", "Layer up", "key.keyboard.page.up"),
     ("layer_down", "Layer down", "key.keyboard.page.down"),
@@ -1459,7 +1473,7 @@ pub const BINDS: &[(&str, &str, &str)] = &[
 
 /// The next layer mode (all, this layer, above, below), as the key cycles them.
 pub fn next_layer_mode() -> &'static str {
-    with(|s| match s.layer {
+    with(|s| match s.layer.mode {
         LayerMode::All => "here",
         LayerMode::Single(_) => "above",
         LayerMode::Above(_) => "below",
@@ -1792,7 +1806,7 @@ pub fn mouse(w: &World<'_>, button: i32, pressed: bool, modifiers: u32) -> bool 
     if b < 2 {
         if let Some(at) = tool_target(w) {
             with(|s| {
-                s.area[b] = Some(horizonmatica_core::area::clamp_corner(at));
+                s.area[b] = Some(litematica_horizon_core::area::clamp_corner(at));
                 s.grab = Grab::Corner(b);
             });
         }
@@ -1905,7 +1919,7 @@ fn tool_wheel(w: &World<'_>, steps: f32, modifiers: u32) -> bool {
             grow(s, axis, k);
         } else {
             let d = axis.map(|a| a.saturating_mul(k));
-            let moved = |c: Option<[i32; 3]>| c.map(|c| horizonmatica_core::area::offset_corner(c, d));
+            let moved = |c: Option<[i32; 3]>| c.map(|c| litematica_horizon_core::area::offset_corner(c, d));
             match s.grab {
                 Grab::Corner(i) => s.area[i] = moved(s.area[i]),
                 Grab::Box => s.area = s.area.map(moved),
@@ -1925,7 +1939,7 @@ fn grow(s: &mut State, axis: [i32; 3], k: i32) {
     let (c, other) = if f == 0 { (a, b[i]) } else { (b, a[i]) };
     let mut d = [0; 3];
     d[i] = sign.saturating_mul(k);
-    let mut c = horizonmatica_core::area::offset_corner(c, d);
+    let mut c = litematica_horizon_core::area::offset_corner(c, d);
     if (i64::from(c[i]) - i64::from(other)) * i64::from(sign) < 0 {
         c[i] = other;
     }
@@ -1960,7 +1974,7 @@ fn tool_lines(s: &State) -> Vec<(String, u32)> {
 // ---------------------------------------------------------------- saving an area
 
 /// Most positions one save takes: as many as a file may hold to be loaded again (2^31).
-const MAX_SAVE: u64 = horizonmatica_core::schematic::MAX_VOLUME;
+const MAX_SAVE: u64 = litematica_horizon_core::schematic::MAX_VOLUME;
 /// Time a save may take per tick.
 const SAVE_BUDGET: std::time::Duration = std::time::Duration::from_millis(4);
 
@@ -1972,7 +1986,7 @@ pub struct SaveJob {
     path: std::path::PathBuf,
     pub lo: [i32; 3],
     pub hi: [i32; 3],
-    builder: horizonmatica_core::schematic::RegionBuilder,
+    builder: litematica_horizon_core::schematic::RegionBuilder,
     /// Game state → palette index.
     ids: HashMap<StateId, u32>,
     /// Chunk columns not read yet.
@@ -2018,8 +2032,8 @@ pub fn start_save(w: &World<'_>, name: &str, overwrite: bool) -> Result<String, 
         return Err(tr!("err.still_saving", file));
     }
     let (lo, hi) = with(|s| s.area_box()).ok_or_else(|| tr!("err.no_corners"))?;
-    let size = horizonmatica_core::area::size(lo, hi).ok_or_else(|| tr!("err.area_too_large"))?;
-    match horizonmatica_core::area::volume(size) {
+    let size = litematica_horizon_core::area::size(lo, hi).ok_or_else(|| tr!("err.area_too_large"))?;
+    match litematica_horizon_core::area::volume(size) {
         Some(volume) if volume <= MAX_SAVE => {}
         _ => return Err(tr!("err.area_volume", volume_text(size), MAX_SAVE)),
     }
@@ -2038,7 +2052,7 @@ pub fn start_save(w: &World<'_>, name: &str, overwrite: bool) -> Result<String, 
         path,
         lo,
         hi,
-        builder: horizonmatica_core::schematic::RegionBuilder::new(size),
+        builder: litematica_horizon_core::schematic::RegionBuilder::new(size),
         ids: HashMap::new(),
         pending,
         total,
@@ -2127,8 +2141,8 @@ fn save_chunk(w: &World<'_>, job: &mut SaveJob, (cx, cz): (i32, i32)) {
 /// Every chunk is in: the schematic is built and written by a thread of its own.
 fn finish_save(w: &World<'_>, job: SaveJob) {
     let SaveJob { name, file, path, lo, hi, builder, started, .. } = job;
-    let size = horizonmatica_core::area::size(lo, hi).unwrap_or([1; 3]);
-    let volume = horizonmatica_core::area::volume(size).and_then(|v| i64::try_from(v).ok()).unwrap_or(0);
+    let size = litematica_horizon_core::area::size(lo, hi).unwrap_or([1; 3]);
+    let volume = litematica_horizon_core::area::volume(size).and_then(|v| i64::try_from(v).ok()).unwrap_or(0);
     let (blocks, states) = (builder.non_air(), builder.states());
     let stem = file.trim_end_matches(".litematic").to_string();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
@@ -2136,7 +2150,7 @@ fn finish_save(w: &World<'_>, job: SaveJob) {
     let schematic = Schematic {
         version: 7,
         data_version: i64::from(crate::DATA_VERSION),
-        metadata: horizonmatica_core::schematic::Metadata {
+        metadata: litematica_horizon_core::schematic::Metadata {
             name,
             author,
             description: String::new(),
@@ -2153,12 +2167,13 @@ fn finish_save(w: &World<'_>, job: SaveJob) {
     let name = file.clone();
     std::thread::spawn(move || {
         let tmp = path.with_file_name(format!("{name}.tmp"));
-        let written = std::fs::write(&tmp, schematic.to_bytes()).map_err(|e| format!("{}: {e}", tmp.display())).and_then(|()| {
-            std::fs::rename(&tmp, &path).map_err(|e| {
-                let _ = std::fs::remove_file(&tmp);
-                format!("{}: {e}", path.display())
-            })
+        let written = schematic.to_bytes().and_then(|bytes| {
+            std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
+            std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
         });
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
         let line = match written {
             Ok(()) => tr!("chat.saved", name, size[0], size[1], size[2], blocks, states, format!("{:.1}", started.elapsed().as_secs_f32())),
             Err(e) => tr!("error", tr!("err.write", name, e)),
@@ -2183,7 +2198,7 @@ fn compass(dx: i32, dz: i32) -> String {
     tr!(&format!("compass.{}", NAMES[((angle + 22.5) / 45.0) as usize % 8]))
 }
 
-/// The save's progress: lines for the HUD and `/hm save status`, and how far it is (0 to 1).
+/// The save's progress: lines for the HUD and `/lm save status`, and how far it is (0 to 1).
 pub fn save_lines(w: &World<'_>, s: &State) -> Option<(Vec<(String, u32)>, f32)> {
     if let Some(sw) = &s.save_write {
         return Some((vec![(tr!("hud.writing", sw.file), 0xFFAA00)], 1.0));
@@ -2324,7 +2339,7 @@ pub fn material_list(w: &World<'_>) -> Vec<Material> {
 }
 
 pub fn volume_text(size: [i32; 3]) -> String {
-    horizonmatica_core::area::volume(size).map_or_else(|| tr!("too_many"), |v| v.to_string())
+    litematica_horizon_core::area::volume(size).map_or_else(|| tr!("too_many"), |v| v.to_string())
 }
 
 pub fn human_size(bytes: u64) -> String {
@@ -2355,7 +2370,7 @@ pub fn hud_lines(w: &World<'_>) -> Vec<(String, u32)> {
         }
         let count = if s.slots.len() > 1 { format!(" ({}/{})", s.selected + 1, s.slots.len()) } else { String::new() };
         let hidden = if slot.shown { String::new() } else { tr!("hud.hidden") };
-        let mut l = vec![(format!("Horizonmatica: {}{count}{hidden}", display_name(p)), 0x55FFFFu32)];
+        let mut l = vec![(format!("Litematica for Horizon: {}{count}{hidden}", display_name(p)), 0x55FFFFu32)];
         if s.moving {
             l.push((tr!("hud.move_mode"), 0xFFFF55));
         }

@@ -9,8 +9,8 @@ breaking or using blocks. The top of the tab shows the item and whether the tool
 
 | Control | What it does | Command |
 |---|---|---|
-| Item icons | Makes that item the tool: stick, blaze rod, breeze rod, bone, feather, wooden axe, golden hoe or arrow | `/hm tool <item>` |
-| **item id** and **Set** | Makes the typed item the tool, such as `minecraft:stick` | `/hm tool <item>` |
+| Item icons | Makes that item the tool: stick, blaze rod, breeze rod, bone, feather, wooden axe, golden hoe or arrow | `/lm tool <item>` |
+| **item id** and **Set** | Makes the typed item the tool, such as `minecraft:stick` | `/lm tool <item>` |
 | **Held item** | Makes the item in your main hand the tool | — |
 
 Choosing an item also turns the tool on.
@@ -19,8 +19,8 @@ Choosing an item also turns the tool on.
 
 | Control | Default | What it does | Command |
 |---|---|---|---|
-| **Selection tool** | On | Off: the item breaks and uses blocks as usual | `/hm tool on\|off` |
-| **Tool works on** | The area | Whether it works on the area selection or on placements | `/hm tool mode area\|placement` |
+| **Selection tool** | On | Off: the item breaks and uses blocks as usual | `/lm tool on\|off` |
+| **Tool works on** | The area | Whether it works on the area selection or on placements | `/lm tool mode area\|placement` |
 | **Reach** | 128 blocks | How far a click reaches, from 16 to 256 blocks | — |
 | **Corner on** | Block hit | **Block in front** marks the air in front of the face, handy for selecting above a floor | — |
 | **Stops at water/lava** | Off | On: water and lava stop the aim. Off: it goes through them to the ground | — |

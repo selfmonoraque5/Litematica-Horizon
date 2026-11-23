@@ -1,6 +1,6 @@
 //! A small reader for Java Edition's binary NBT (big endian), enough for `.litematic` files.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read, path::Path};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tag {
@@ -68,13 +68,16 @@ impl Tag {
     }
 }
 
-/// Limits that keep a hostile file from exhausting memory or the stack. Arrays are only as
-/// long as NBT allows (an i32 length); an array is allocated once its bytes are known to be there.
-const MAX_DEPTH: usize = 512;
+const MAX_DEPTH: usize = 128;
+const MAX_TAGS: usize = 4_000_000;
+const MAX_FILE_BYTES: usize = 128 * 1024 * 1024;
+const MAX_NBT_BYTES: usize = 512 * 1024 * 1024;
+const INPUT_TOO_LARGE: &str = "schematic exceeds the import size limit";
 
 struct Reader<'a> {
     data: &'a [u8],
     at: usize,
+    tags_left: usize,
     /// Long arrays are skipped (read as empty): enough to look at a file's metadata and sizes.
     skip_longs: bool,
 }
@@ -106,23 +109,18 @@ impl<'a> Reader<'a> {
     fn i64(&mut self) -> R<i64> {
         Ok(i64::from_be_bytes(self.take(8)?.try_into().unwrap()))
     }
-    fn len(&mut self) -> R<usize> {
-        let n = self.i32()?;
-        if n < 0 {
-            return Ok(0);
-        }
-        Ok(n as usize)
+    fn array_len(&mut self) -> R<usize> {
+        usize::try_from(self.i32()?).map_err(|_| "NBT: negative array length".into())
     }
     fn string(&mut self) -> R<String> {
         let n = self.u16()? as usize;
-        let bytes = self.take(n)?;
-        // Modified UTF-8: fine as lossy UTF-8 for block and region names.
-        Ok(String::from_utf8_lossy(bytes).into_owned())
+        crate::mutf8::decode(self.take(n)?)
     }
     fn payload(&mut self, kind: u8, depth: usize) -> R<Tag> {
         if depth > MAX_DEPTH {
             return Err("NBT: nested too deeply".into());
         }
+        self.tags_left = self.tags_left.checked_sub(1).ok_or("NBT: too many tags")?;
         Ok(match kind {
             1 => Tag::Byte(self.u8()? as i8),
             2 => Tag::Short(self.i16()?),
@@ -131,7 +129,7 @@ impl<'a> Reader<'a> {
             5 => Tag::Float(f32::from_bits(self.i32()? as u32)),
             6 => Tag::Double(f64::from_bits(self.i64()? as u64)),
             7 => {
-                let n = self.len()?;
+                let n = self.array_len()?;
                 let bytes = self.take(n)?;
                 let mut v = vec_for(n)?;
                 v.extend(bytes.iter().map(|&b| b as i8));
@@ -140,7 +138,10 @@ impl<'a> Reader<'a> {
             8 => Tag::String(self.string()?),
             9 => {
                 let inner = self.u8()?;
-                let n = self.len()?;
+                let n = self.i32()?.max(0) as usize;
+                if n > self.tags_left {
+                    return Err("NBT: too many tags".into());
+                }
                 let mut items = Vec::with_capacity(n.min(4096));
                 for _ in 0..n {
                     items.push(self.payload(inner, depth + 1)?);
@@ -160,14 +161,14 @@ impl<'a> Reader<'a> {
                 Tag::Compound(map)
             }
             11 => {
-                let n = self.len()?;
+                let n = self.array_len()?;
                 let bytes = self.take(n.checked_mul(4).ok_or("NBT: array too long")?)?;
                 let mut v = vec_for(n)?;
                 v.extend(bytes.chunks_exact(4).map(|c| i32::from_be_bytes(c.try_into().unwrap())));
                 Tag::IntArray(v)
             }
             12 => {
-                let n = self.len()?;
+                let n = self.array_len()?;
                 let bytes = self.take(n.checked_mul(8).ok_or("NBT: array too long")?)?;
                 if self.skip_longs {
                     Tag::LongArray(Vec::new())
@@ -188,7 +189,10 @@ pub fn read(data: &[u8]) -> R<(String, Tag)> {
 }
 
 fn read_with(data: &[u8], skip_longs: bool) -> R<(String, Tag)> {
-    let mut r = Reader { data, at: 0, skip_longs };
+    if data.len() > MAX_NBT_BYTES {
+        return Err(INPUT_TOO_LARGE.into());
+    }
+    let mut r = Reader { data, at: 0, tags_left: MAX_TAGS, skip_longs };
     let kind = r.u8()?;
     if kind == 0 {
         return Err("NBT: empty root".into());
@@ -206,9 +210,7 @@ pub const OUT_OF_MEMORY: &str = "not enough memory";
 /// footer is believed up to this many times the file's size.
 const MAX_RATIO: usize = 1032;
 
-/// Reads a gzip-compressed (or, failing that, uncompressed) NBT file. No size is too large in
-/// itself: the file is unpacked as long as the system gives memory for it, else the read ends
-/// with [`OUT_OF_MEMORY`] (rather than the process).
+/// Reads either gzip-compressed or raw NBT, with bounded input and decompression.
 pub fn read_file_bytes(bytes: &[u8]) -> R<Tag> {
     read_file_with(bytes, false)
 }
@@ -231,43 +233,51 @@ pub fn unpacked_size(head: &[u8], tail: [u8; 4], len: u64) -> u64 {
 }
 
 fn read_file_with(bytes: &[u8], skip_longs: bool) -> R<Tag> {
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(INPUT_TOO_LARGE.into());
+    }
     if bytes.starts_with(&[0x1f, 0x8b]) {
-        let out = gunzip(bytes)?;
+        let out = read_bounded(flate2::read::GzDecoder::new(bytes), MAX_NBT_BYTES)?;
         Ok(read_with(&out, skip_longs)?.1)
     } else {
         Ok(read_with(bytes, skip_longs)?.1)
     }
 }
 
-/// The whole file unpacked, in memory taken only as far as the system gives it.
-fn gunzip(bytes: &[u8]) -> R<Vec<u8>> {
-    use std::io::Read;
-    const STEP: usize = 1 << 20;
+/// Reads a regular file under the same input cap used by the parser.
+pub fn read_input(path: &Path) -> R<Vec<u8>> {
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("expected a regular schematic file".into());
+    }
+    if meta.len() > MAX_FILE_BYTES as u64 {
+        return Err(INPUT_TOO_LARGE.into());
+    }
+    read_bounded(file, MAX_FILE_BYTES)
+}
+
+fn read_bounded(mut input: impl Read, limit: usize) -> R<Vec<u8>> {
+    let mut buffer = [0; 32 * 1024];
     let mut out = Vec::new();
-    // Room for what the footer says at once, not by doubling (a failed try is no error: the
-    // reading below takes it step by step).
-    let tail = bytes.len().checked_sub(4).map_or([0; 4], |at| bytes[at..].try_into().unwrap());
-    let hint = unpacked_size(bytes, tail, bytes.len() as u64) as usize;
-    let _ = out.try_reserve_exact(hint);
-    let mut gz = flate2::read::GzDecoder::new(bytes);
     loop {
-        let room = out.capacity() - out.len();
-        if room > 0 {
-            let n = (&mut gz).take(room as u64).read_to_end(&mut out).map_err(|e| format!("gzip: {e}"))?;
-            if n < room {
-                return Ok(out);
-            }
-        }
-        // Full: is there more?
-        let mut probe = [0u8; 1];
-        if gz.read(&mut probe).map_err(|e| format!("gzip: {e}"))? == 0 {
+        let want = buffer.len().min(limit - out.len() + 1);
+        let n = match input.read(&mut buffer[..want]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result.map_err(|e| e.to_string())?,
+        };
+        if n == 0 {
             return Ok(out);
         }
-        // More: room again, a large step if there is memory for it, else a small one.
-        if out.try_reserve(STEP).is_err() {
-            out.try_reserve_exact(STEP).map_err(|_| OUT_OF_MEMORY.to_string())?;
+        let needed = out.len() + n;
+        if needed > limit {
+            return Err(INPUT_TOO_LARGE.into());
         }
-        out.push(probe[0]);
+        if needed > out.capacity() {
+            let capacity = (out.capacity() * 2).max(needed).min(limit);
+            out.try_reserve_exact(capacity - out.len()).map_err(|_| OUT_OF_MEMORY.to_string())?;
+        }
+        out.extend_from_slice(&buffer[..n]);
     }
 }
 
@@ -280,9 +290,12 @@ fn vec_for<T>(n: usize) -> R<Vec<T>> {
 
 // ---- writer (used by tests to build files, and handy for exporting) ----
 
-fn put_str(out: &mut Vec<u8>, s: &str) {
-    out.extend_from_slice(&(s.len() as u16).to_be_bytes());
-    out.extend_from_slice(s.as_bytes());
+fn put_str(out: &mut Vec<u8>, s: &str) -> R<()> {
+    let bytes = crate::mutf8::encode(s);
+    let len = u16::try_from(bytes.len()).map_err(|_| "NBT: string exceeds 65535 encoded bytes")?;
+    out.extend_from_slice(&len.to_be_bytes());
+    out.extend_from_slice(&bytes);
+    Ok(())
 }
 
 fn kind(tag: &Tag) -> u8 {
@@ -302,7 +315,7 @@ fn kind(tag: &Tag) -> u8 {
     }
 }
 
-fn put_payload(out: &mut Vec<u8>, tag: &Tag) {
+fn put_payload(out: &mut Vec<u8>, tag: &Tag) -> R<()> {
     match tag {
         Tag::Byte(v) => out.push(*v as u8),
         Tag::Short(v) => out.extend_from_slice(&v.to_be_bytes()),
@@ -314,19 +327,19 @@ fn put_payload(out: &mut Vec<u8>, tag: &Tag) {
             out.extend_from_slice(&(v.len() as i32).to_be_bytes());
             out.extend(v.iter().map(|&b| b as u8));
         }
-        Tag::String(s) => put_str(out, s),
+        Tag::String(s) => put_str(out, s)?,
         Tag::List(items) => {
             out.push(items.first().map_or(0, kind));
             out.extend_from_slice(&(items.len() as i32).to_be_bytes());
             for t in items {
-                put_payload(out, t);
+                put_payload(out, t)?;
             }
         }
         Tag::Compound(map) => {
             for (k, v) in map {
                 out.push(kind(v));
-                put_str(out, k);
-                put_payload(out, v);
+                put_str(out, k)?;
+                put_payload(out, v)?;
             }
             out.push(0);
         }
@@ -343,22 +356,23 @@ fn put_payload(out: &mut Vec<u8>, tag: &Tag) {
             }
         }
     }
+    Ok(())
 }
 
 /// Writes a named root tag (uncompressed).
-pub fn write(name: &str, tag: &Tag) -> Vec<u8> {
+pub fn write(name: &str, tag: &Tag) -> R<Vec<u8>> {
     let mut out = vec![kind(tag)];
-    put_str(&mut out, name);
-    put_payload(&mut out, tag);
-    out
+    put_str(&mut out, name)?;
+    put_payload(&mut out, tag)?;
+    Ok(out)
 }
 
 /// Writes a gzip-compressed named root tag.
-pub fn write_gzip(name: &str, tag: &Tag) -> Vec<u8> {
+pub fn write_gzip(name: &str, tag: &Tag) -> R<Vec<u8>> {
     use std::io::Write;
     let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    enc.write_all(&write(name, tag)).unwrap();
-    enc.finish().unwrap()
+    enc.write_all(&write(name, tag)?).map_err(|e| e.to_string())?;
+    enc.finish().map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -373,7 +387,7 @@ mod tests {
         map.insert("l".to_string(), Tag::LongArray(vec![1, -1, i64::MAX]));
         map.insert("list".to_string(), Tag::List(vec![Tag::Short(1), Tag::Short(2)]));
         let tag = Tag::Compound(map);
-        let bytes = write_gzip("root", &tag);
+        let bytes = write_gzip("root", &tag).unwrap();
         assert_eq!(read_file_bytes(&bytes).unwrap(), tag);
     }
 
@@ -382,10 +396,11 @@ mod tests {
     #[test]
     fn footer_is_only_a_hint() {
         let tag = Tag::Compound(BTreeMap::from([("l".into(), Tag::LongArray((0..300_000).collect()))]));
-        let bytes = write_gzip("", &tag);
+        let bytes = write_gzip("", &tag).unwrap();
         let at = bytes.len() - 4;
         let real = u32::from_le_bytes(bytes[at..].try_into().unwrap());
         assert_eq!(unpacked_size(&bytes, bytes[at..].try_into().unwrap(), bytes.len() as u64), u64::from(real));
+        let gunzip = |bytes: &[u8]| read_bounded(flate2::read::GzDecoder::new(bytes), MAX_NBT_BYTES);
         assert_eq!(gunzip(&bytes).unwrap().len(), real as usize);
         for claim in [0, 1, real - 1, real + 1, u32::MAX] {
             let mut lying = bytes.clone();
@@ -400,7 +415,28 @@ mod tests {
 
     #[test]
     fn truncated_is_an_error() {
-        let bytes = write("", &Tag::Compound(BTreeMap::from([("x".into(), Tag::Long(3))])));
+        let bytes = write("", &Tag::Compound(BTreeMap::from([("x".into(), Tag::Long(3))]))).unwrap();
         assert!(read(&bytes[..bytes.len() - 3]).is_err());
+    }
+
+    #[test]
+    fn java_strings_round_trip_at_the_nbt_boundary() {
+        let tag = Tag::Compound(BTreeMap::from([("💎".into(), Tag::String("A\0😀".into()))]));
+        let bytes = write("", &tag).unwrap();
+        let java_bytes = [10, 0, 0, 8, 0, 6, 0xed, 0xa0, 0xbd, 0xed, 0xb2, 0x8e,
+            0, 9, b'A', 0xc0, 0x80, 0xed, 0xa0, 0xbd, 0xed, 0xb8, 0x80, 0];
+        assert_eq!(bytes, java_bytes);
+        assert_eq!(read(&java_bytes).unwrap().1, tag);
+        assert!(write("", &Tag::String("😀".repeat(12_000))).is_err());
+    }
+
+    #[test]
+    fn import_limits_are_enforced() {
+        let bytes = write_gzip("", &Tag::ByteArray(vec![0; 1024])).unwrap();
+        assert_eq!(read_bounded(flate2::read::GzDecoder::new(&bytes[..]), 1024), Err(INPUT_TOO_LARGE.into()));
+        assert_eq!(read_bounded(&b"abc"[..], 3).unwrap(), b"abc");
+        assert!(read(&[7, 0, 0, 255, 255, 255, 255]).unwrap_err().contains("negative array"));
+        let n = ((MAX_TAGS + 1) as i32).to_be_bytes();
+        assert!(read(&[9, 0, 0, 1, n[0], n[1], n[2], n[3]]).unwrap_err().contains("too many tags"));
     }
 }

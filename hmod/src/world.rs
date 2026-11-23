@@ -2,7 +2,7 @@
 //! client world's blocks and the inventory. Everything the rest of the mod knows of the world
 //! comes through here.
 
-use horizonmatica_core::BlockState;
+use litematica_horizon_core::BlockState;
 use mod_api::{ClientHost, EntityRef, HostBlockStates, LevelRef, PlayerRef};
 use std::collections::HashMap;
 

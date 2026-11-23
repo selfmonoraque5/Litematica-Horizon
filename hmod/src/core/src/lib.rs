@@ -1,6 +1,6 @@
-//! Horizonmatica: the game-independent half of the mod.
+//! Litematica for Horizon: the game-independent half of the mod.
 //!
-//! The helpers and the `horizonmatica` module compiled into `horizon-client` read the world and draw;
+//! The helpers and the `litematica_horizon` module compiled into `horizon-client` read the world and draw;
 //! everything that doesn't need the game lives here, so it is tested with a plain `cargo test`
 //! and compiled once by Cargo.
 
@@ -8,6 +8,7 @@ pub mod area;
 pub mod bitarray;
 pub mod formats;
 pub mod materials;
+mod mutf8;
 pub mod nbt;
 pub mod placement;
 pub mod printer;
@@ -38,6 +39,9 @@ pub fn list_schematics(dir: &std::path::Path) -> Vec<String> {
         .flatten()
         .flatten()
         .filter_map(|e| {
+            if !e.file_type().ok()?.is_file() {
+                return None;
+            }
             let name = e.file_name().to_string_lossy().into_owned();
             is_schematic(&name).then_some(name)
         })

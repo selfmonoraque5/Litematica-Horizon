@@ -13,8 +13,8 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "hmod"
-LANG = ROOT / "assets" / "horizonmatica" / "lang"
-PREFIX = "horizonmatica."
+LANG = ROOT / "assets" / "litematica_horizon" / "lang"
+PREFIX = "litematica_horizon."
 
 # Keys the code builds with format!(...) instead of naming them.
 DYNAMIC = (

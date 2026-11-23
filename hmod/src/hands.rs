@@ -9,8 +9,8 @@
 use crate::i18n::item_name;
 use crate::runtime;
 use crate::world::{StateId, World};
-use horizonmatica_core::verify::{self, Status};
-use horizonmatica_core::{BlockState, materials, printer};
+use litematica_horizon_core::verify::{self, Status};
+use litematica_horizon_core::{BlockState, materials, printer};
 use mod_api::ClientHost;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -237,7 +237,7 @@ fn printer_step(h: &mut dyn Hands) {
     let mut pillar = None;
     let mut stuck = 0usize;
     for (order, p) in printer::positions_in_reach(eye, reach).into_iter().enumerate() {
-        if !layer.contains(p[1]) || !loaded(h, p) || runtime::with(|s| s.recent.blocked(p, now, settings.retry_ticks)) {
+        if !layer.contains(p) || !loaded(h, p) || runtime::with(|s| s.recent.blocked(p, now, settings.retry_ticks)) {
             continue;
         }
         let Some((status, wanted)) = status_at(h, p) else { continue };
@@ -598,7 +598,7 @@ fn first_wanted(h: &dyn Hands, skip: &[[i32; 3]]) -> Option<([i32; 3], Status, B
             continue;
         }
         last = cell;
-        if !layer.contains(cell[1]) || skip.contains(&cell) {
+        if !layer.contains(cell) || skip.contains(&cell) {
             continue;
         }
         let Some((status, wanted)) = status_at(h, cell) else { continue };
