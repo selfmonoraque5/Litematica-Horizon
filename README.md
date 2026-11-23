@@ -24,7 +24,7 @@ Its commands are `/blazematica` and `/lm`, so it can be installed next to Horizo
 
 ## Install
 
-1. Download `blazematica-1.0.0.hmod` from the [latest release](https://github.com/selfmonoraque5/blazematica/releases/latest).
+1. Download the `blazematica-….hmod` file from the [latest release](https://github.com/selfmonoraque5/blazematica/releases/latest).
 2. Put it in the `horizon-native-mods` folder of your game folder, not in `mods`. On Windows that is
    `%APPDATA%\horizon\horizon-native-mods`.
 3. In the launcher, open the Mods page and click **Build**. When it says **Up to date**, play.
