@@ -7,9 +7,12 @@ A native Rust schematic mod for Horizon’s Minecraft Java Edition 26.3 client. 
 - Load `.litematic` versions 1–7, Sponge `.schem`, legacy `.schematic`, and vanilla structure `.nbt`.
 - Preview a build as ghost blocks, move or rotate the placement, mirror it, and show individual layers along X, Y, or Z.
 - Compare your build to its schematic and view the required materials. Keep multiple placements and restore them per world and dimension.
+- **Paste** a placement in one go with `/lm paste` (single player with cheats, or as an operator): it sets the missing and wrong blocks with `/setblock`, bottom up, within the shown layers.
+- **Hover info**: look at a block and the HUD says what should be there (`Missing here: oak_planks`, `stone here, should be oak_planks`, or which property differs).
 - Capture an area and export its blocks and states as a `.litematic`. Easy Place and the optional printer are available from the mod menu.
 
 <p align="center"><img src="screenshots/ghost.jpg" width="49%" alt="A schematic shown as ghost blocks"> <img src="screenshots/materials.jpg" width="49%" alt="The materials list"></p>
+<p align="center"><img src="screenshots/paste.jpg" width="49%" alt="The hut after /lm paste: 100% done"> <img src="screenshots/hover.jpg" width="49%" alt="Hover info: stone here, should be oak_planks"></p>
 
 ### Compared with Horizonmatica
 
@@ -18,6 +21,7 @@ Blazematica started from keksi2k's [Horizonmatica](https://github.com/keksi2k/ho
 - Layers can be sliced along X and Z, not only Y (`/lm layer axis x`).
 - Schematic text is read as Java writes it (modified UTF-8), so names with special characters load correctly.
 - File reading is bounded (size and decompression caps), and uncompressed `.nbt` files load too.
+- **Paste** and **hover info** (Horizonmatica has neither).
 - Built for the current Horizon Nightly.
 
 Its id and commands (`/blazematica`, `/lm`) differ from Horizonmatica's (`/horizonmatica`, `/hm`), so they don't clash. Both patch the game, though, so they can only be built together when both are made for the same Nightly: right now Horizonmatica's listed release needs Nightly 0a875da and Blazematica f1bb66f.

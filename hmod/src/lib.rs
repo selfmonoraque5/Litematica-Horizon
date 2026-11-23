@@ -41,6 +41,12 @@ struct Mod;
 
 /// Sends the chat lines the mod queued.
 fn flush(host: &mut dyn ClientHost) {
+    for command in runtime::take_commands() {
+        if let Err(e) = host.send_chat(&command) {
+            runtime::command_refused(&e);
+            break;
+        }
+    }
     for line in runtime::take_out() {
         let _ = host.chat_line(Text::literal(line));
     }

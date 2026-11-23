@@ -44,6 +44,14 @@ The chat completes the commands: type `/lm ` and it offers the subcommands, narr
 | `/lm layer above <coordinate>`, `/lm layer below <coordinate>` | Includes coordinates greater or smaller than the given endpoint, respectively | — |
 | `/lm layer range <a> <b>` | Shows an inclusive range | — |
 
+## Paste and hover info
+| Command | Effect | In the menu |
+|---|---|---|
+| `/lm paste` | Builds the selected placement with `/setblock`: missing and wrong blocks, bottom up, within the shown layers. The first block goes alone; if the server doesn't place it (no cheats or operator rights), the paste stops | — |
+| `/lm paste status` | Prints how far the paste has got | — |
+| `/lm paste cancel` | Stops the paste | — |
+| `/lm hover [on\|off]` | Shows in the HUD what should be at the block you look at (on by default) | — |
+
 ## Area selection and saving
 
 | Command | Effect | In the menu |

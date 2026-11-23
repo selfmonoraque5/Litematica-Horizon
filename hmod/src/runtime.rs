@@ -125,6 +125,12 @@ pub struct State {
     pub highlight_item: Option<String>,
     /// The last message a command or a load gave (the menu shows it).
     pub message: String,
+    /// A paste under way (`/lm paste`).
+    paste: Option<Paste>,
+    /// Commands for the game to send as the player's (`take_commands`).
+    commands: Vec<String>,
+    /// Hover info switched off (`/lm hover off`) for this session.
+    no_hover: bool,
 }
 
 impl State {
@@ -212,6 +218,20 @@ pub fn say(text: &str) {
 }
 
 /// The chat lines queued, to send.
+/// The commands to send as the player's, in order (a paste's `/setblock`s).
+pub fn take_commands() -> Vec<String> {
+    with(|s| std::mem::take(&mut s.commands))
+}
+
+/// The game refused to send one of `take_commands`'s commands: a paste stops.
+pub fn command_refused(why: &str) {
+    with(|s| {
+        if let Some(p) = s.paste.take() {
+            s.out.push(tr!("error", tr!("err.paste_refused", p.placed, why)));
+        }
+    });
+}
+
 pub fn take_out() -> Vec<String> {
     with(|s| std::mem::take(&mut s.out))
 }
@@ -874,7 +894,7 @@ pub const WORDS: &[(&str, &[&str], Option<&str>)] = &[
 
 /// `/lm help`'s lines (the commands' words stay English; what they do is translated).
 fn help_lines() -> Vec<String> {
-    (1..=13).map(|i| tr!(&format!("help.{i}"))).collect()
+    (1..=15).map(|i| tr!(&format!("help.{i}"))).collect()
 }
 
 /// Runs `/blazematica …`; true when the command was ours.
@@ -1143,6 +1163,22 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
             })?;
             save_settings(w);
             Ok(vec![line])
+        }
+        "paste" => Ok(vec![match rest {
+            ["cancel" | "stop"] => cancel_paste()?,
+            ["status"] => paste_status()?,
+            [] => start_paste()?,
+            _ => return Err(tr!("err.paste_usage")),
+        }]),
+        "hover" => {
+            let on = match rest {
+                [] => with(|s| s.no_hover),
+                ["on"] => true,
+                ["off"] => false,
+                _ => return Err(tr!("err.hover_usage")),
+            };
+            with(|s| s.no_hover = !on);
+            Ok(vec![if on { tr!("chat.hover_on") } else { tr!("chat.hover_off") }])
         }
         "save" => {
             match rest {
@@ -2279,6 +2315,218 @@ pub fn tick(w: &World<'_>) {
     with(State::sync_rev);
     scan_step(w);
     save_step(w);
+    paste_step(w);
+}
+
+// ---------------------------------------------------------------- paste
+
+/// Blocks a paste places in one tick, at most.
+const PASTE_PER_TICK: usize = 48;
+/// Positions a paste looks at in one tick, at most (and no longer than `PASTE_BUDGET`).
+const PASTE_CELLS: usize = 16_384;
+const PASTE_BUDGET: std::time::Duration = std::time::Duration::from_millis(2);
+/// Ticks the first block may take to come back from the server before the paste gives up.
+const PASTE_PROBE_TICKS: u32 = 40;
+
+/// A paste: the selected placement's missing and wrong blocks set with `/setblock`, region by
+/// region from the bottom up, within the shown layers. The server decides whether the player may:
+/// the first block is sent alone, and the rest only once it has appeared.
+struct Paste {
+    slot: u64,
+    boxes: Vec<([i32; 3], [i32; 3])>,
+    /// The box being walked and the next position in it (x, then z, then y).
+    at: usize,
+    next: [i32; 3],
+    /// The first block sent, and the ticks since, until the world shows it.
+    probe: Option<([i32; 3], u32)>,
+    placed: u64,
+    /// Positions in chunks the client doesn't hold: left for a second paste.
+    unloaded: u64,
+    started: std::time::Instant,
+}
+
+fn start_paste() -> Result<String, String> {
+    if with(|s| s.paste.is_some()) {
+        return Err(tr!("err.still_pasting"));
+    }
+    with(|s| {
+        let slot = s.sel().ok_or_else(|| tr!("err.no_schematic"))?;
+        let boxes: Vec<_> = slot.placement.region_boxes().into_iter().filter_map(|b| s.layer.clip_bounds(b)).collect();
+        let Some(&(first, _)) = boxes.first() else { return Err(tr!("err.paste_empty")) };
+        let name = display_name(&slot.placement);
+        s.paste = Some(Paste {
+            slot: slot.id,
+            boxes,
+            at: 0,
+            next: first,
+            probe: None,
+            placed: 0,
+            unloaded: 0,
+            started: std::time::Instant::now(),
+        });
+        Ok(tr!("chat.pasting", name))
+    })
+}
+
+fn cancel_paste() -> Result<String, String> {
+    with(|s| s.paste.take().map(|p| tr!("chat.paste_cancelled", p.placed)).ok_or_else(|| tr!("err.no_paste")))
+}
+
+fn paste_status() -> Result<String, String> {
+    with(|s| {
+        let p = s.paste.as_ref().ok_or_else(|| tr!("err.no_paste"))?;
+        Ok(tr!("chat.paste_status", p.placed, p.at + 1, p.boxes.len()))
+    })
+}
+
+/// The paste's work for this tick: the probe watched, then positions walked and commands queued
+/// within the limits.
+fn paste_step(w: &World<'_>) {
+    with(|s| {
+        let Some(mut p) = s.paste.take() else { return };
+        let Some(slot) = s.slots.iter().position(|x| x.id == p.slot) else {
+            s.out.push(tr!("error", tr!("err.paste_gone")));
+            return;
+        };
+        if let Some((at, ticks)) = p.probe {
+            match quick_status_in(w, s, slot, at) {
+                Some((Status::Correct, ..)) => p.probe = None,
+                _ if ticks >= PASTE_PROBE_TICKS => {
+                    s.out.push(tr!("error", tr!("err.paste_denied")));
+                    return;
+                }
+                _ => {
+                    p.probe = Some((at, ticks + 1));
+                    s.paste = Some(p);
+                    return;
+                }
+            }
+        }
+        let start = std::time::Instant::now();
+        let (mut cells, mut sent) = (0, 0);
+        while p.at < p.boxes.len() && sent < PASTE_PER_TICK && cells < PASTE_CELLS && start.elapsed() < PASTE_BUDGET {
+            let (lo, hi) = p.boxes[p.at];
+            let at = p.next;
+            // Next: x, then z, then y; then the next box.
+            let mut n = at;
+            n[0] += 1;
+            if n[0] > hi[0] {
+                n[0] = lo[0];
+                n[2] += 1;
+                if n[2] > hi[2] {
+                    n[2] = lo[2];
+                    n[1] += 1;
+                }
+            }
+            if n[1] > hi[1] {
+                p.at += 1;
+                if let Some(&(first, _)) = p.boxes.get(p.at) {
+                    n = first;
+                }
+            }
+            p.next = n;
+            cells += 1;
+            if !w.loaded(at) {
+                p.unloaded += 1;
+                continue;
+            }
+            let Some((status, r, _)) = quick_status_in(w, s, slot, at) else { continue };
+            if !matches!(status, Status::Missing | Status::WrongBlock | Status::WrongState) {
+                continue;
+            }
+            let state = s.state_of(r).to_string_full();
+            s.commands.push(format!("/setblock {} {} {} {state}", at[0], at[1], at[2]));
+            p.placed += 1;
+            sent += 1;
+            if p.placed == 1 {
+                p.probe = Some((at, 0));
+                break;
+            }
+        }
+        if p.at >= p.boxes.len() && p.probe.is_none() {
+            let secs = format!("{:.1}", p.started.elapsed().as_secs_f32());
+            s.out.push(tr!("chat.pasted", p.placed, secs));
+            if p.unloaded > 0 {
+                s.out.push(tr!("chat.paste_unloaded", p.unloaded));
+            }
+            return;
+        }
+        s.paste = Some(p);
+    });
+}
+
+// ---------------------------------------------------------------- hover info
+
+/// How far along the view hover info looks.
+const HOVER_REACH: f64 = 32.0;
+
+/// Hover info: the first position along the view, up to the first real block in the way, where
+/// the build differs from the shown placements, and what should be there.
+fn hover_line(w: &World<'_>, s: &mut State) -> Option<(String, u32)> {
+    if s.no_hover {
+        return None;
+    }
+    let (eye, dir) = w.aim()?;
+    let hit = w.ray(HOVER_REACH).map(|(b, _)| b);
+    let mut cell = eye.map(|v| v.floor() as i32);
+    let step = dir.map(|d| if d > 0.0 { 1 } else if d < 0.0 { -1 } else { 0 });
+    let delta = dir.map(|d| if d == 0.0 { f64::INFINITY } else { (1.0 / d).abs() });
+    let mut next = [0, 1, 2].map(|i| match step[i] {
+        1 => (f64::from(cell[i]) + 1.0 - eye[i]) / dir[i],
+        -1 => (eye[i] - f64::from(cell[i])) / -dir[i],
+        _ => f64::INFINITY,
+    });
+    let mut travelled = 0.0;
+    while travelled <= HOVER_REACH {
+        if let Some((status, r, _)) = quick_status(w, s, cell) {
+            let wanted = s.state_of(r).clone();
+            let actual = w.block(cell).map(|id| s.blocks.state(w, id));
+            let text = match status {
+                Status::Missing => Some(tr!("hud.hover.missing", short_name(&wanted))),
+                Status::WrongBlock => actual.map(|a| tr!("hud.hover.wrong", short_name(&a), short_name(&wanted))),
+                Status::Extra => actual.map(|a| tr!("hud.hover.extra", short_name(&a))),
+                Status::WrongState => actual.map(|a| tr!("hud.hover.state", short_name(&wanted), state_diff(&a, &wanted))),
+                _ => None,
+            };
+            if let Some(text) = text {
+                return Some((text, 0xFFFF55));
+            }
+        }
+        if Some(cell) == hit {
+            return None;
+        }
+        let i = if next[0] <= next[1] && next[0] <= next[2] {
+            0
+        } else if next[1] <= next[2] {
+            1
+        } else {
+            2
+        };
+        if !next[i].is_finite() {
+            return None;
+        }
+        travelled = next[i];
+        next[i] += delta[i];
+        cell[i] += step[i];
+    }
+    None
+}
+
+/// A block's id without `minecraft:`.
+fn short_name(state: &BlockState) -> String {
+    state.name.strip_prefix("minecraft:").unwrap_or(&state.name).to_string()
+}
+
+/// The properties that differ, as `facing: east -> north`.
+fn state_diff(actual: &BlockState, wanted: &BlockState) -> String {
+    let mut out = Vec::new();
+    for (k, v) in &wanted.properties {
+        let have = actual.prop(k).unwrap_or("-");
+        if have != v {
+            out.push(format!("{k}: {have} -> {v}"));
+        }
+    }
+    out.join(", ")
 }
 
 /// The verifier, over and over, for the selected placement alone (shown or not): its progress
@@ -2432,6 +2680,12 @@ pub fn hud_lines(w: &World<'_>) -> Vec<(String, u32)> {
                 }
             }
             None => l.push((tr!("hud.verifying"), 0xAAAAAA)),
+        }
+        if let Some(p) = &s.paste {
+            l.push((tr!("hud.paste", p.placed), 0xFF55FF));
+        }
+        if let Some(line) = hover_line(w, s) {
+            l.push(line);
         }
         if s.settings.printer_on {
             l.push((tr!("hud.printer", s.placed), 0xFF55FF));

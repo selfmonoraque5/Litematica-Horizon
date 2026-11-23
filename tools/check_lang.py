@@ -18,7 +18,7 @@ PREFIX = "blazematica."
 
 # Keys the code builds with format!(...) instead of naming them.
 DYNAMIC = (
-    [f"help.{i}" for i in range(1, 14)]
+    [f"help.{i}" for i in range(1, 16)]
     + [f"credits.{i}" for i in range(1, 7)]
     + [f"menu.tool.help_{i}" for i in range(1, 5)]
     + [f"rotation.{r}" for r in ("none", "cw_90", "180", "ccw_90")]
