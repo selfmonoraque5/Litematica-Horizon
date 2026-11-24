@@ -9,7 +9,7 @@ A native Rust schematic mod for Horizon’s Minecraft Java Edition 26.3 client. 
 - Compare your build to its schematic and view the required materials. Keep multiple placements and restore them per world and dimension.
 - **Paste** a placement in one go with `/lm paste` (single player with cheats, or as an operator): it sets the missing and wrong blocks with `/setblock`, bottom up, within the shown layers.
 - **Hover info**: look at a block and the HUD says what should be there (`Missing here: oak_planks`, `stone here, should be oak_planks`, or which property differs).
-- Capture an area and export its blocks and states as a `.litematic`. Easy Place and the optional printer are available from the mod menu.
+- Capture an area and export its blocks and states as a `.litematic`. Easy Place and the optional printer are available from the mod menu; they place blocks only in single player (on servers they stay off, as server rules may forbid automatic placing).
 
 <p align="center"><img src="screenshots/ghost.jpg" width="49%" alt="A schematic shown as ghost blocks"> <img src="screenshots/materials.jpg" width="49%" alt="The materials list"></p>
 <p align="center"><img src="screenshots/paste.jpg" width="49%" alt="The hut after /lm paste: 100% done"> <img src="screenshots/hover.jpg" width="49%" alt="Hover info: stone here, should be oak_planks"></p>

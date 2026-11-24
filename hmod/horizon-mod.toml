@@ -1,7 +1,7 @@
 id = "blazematica"
 name = "Blazematica"
-version = "1.1.3"
-description = "Schematics for Horizon: load .litematic, .schem, .schematic and .nbt files as ghost blocks, check your build against them, see the materials list, save areas, and build with Easy Place or the printer."
+version = "1.1.4"
+description = "Schematics for Horizon: load .litematic, .schem, .schematic and .nbt files as ghost blocks, check your build against them, see the materials list, save areas, and build with Easy Place or the printer (in single player)."
 authors = ["selfmonoraque5", "TheApple05", "keksi2k"]
 license = "MIT"
 license_url = "https://github.com/selfmonoraque5/blazematica/blob/main/LICENSE"

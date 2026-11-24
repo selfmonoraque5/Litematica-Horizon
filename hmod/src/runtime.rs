@@ -1430,7 +1430,13 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
                     v => {
                         st.printer_on = on_off(v.as_ref(), st.printer_on)?;
                         s.recent.clear();
-                        if s.settings.printer_on { tr!("chat.printer_on") } else { tr!("chat.printer_off") }
+                        if s.settings.printer_on && crate::hands::multiplayer(w.host) {
+                            tr!("chat.printer_single_player")
+                        } else if s.settings.printer_on {
+                            tr!("chat.printer_on")
+                        } else {
+                            tr!("chat.printer_off")
+                        }
                     }
                 };
                 Ok::<_, String>(msg)
@@ -1452,7 +1458,13 @@ pub fn run(w: &World<'_>, args: &[&str]) -> Result<Vec<String>, String> {
                     }
                     v => {
                         st.easy_place = on_off(v.as_ref(), st.easy_place)?;
-                        if st.easy_place { tr!("chat.easy_on") } else { tr!("chat.easy_off") }
+                        if st.easy_place && crate::hands::multiplayer(w.host) {
+                            tr!("chat.easy_single_player")
+                        } else if st.easy_place {
+                            tr!("chat.easy_on")
+                        } else {
+                            tr!("chat.easy_off")
+                        }
                     }
                 };
                 Ok::<_, String>(msg)

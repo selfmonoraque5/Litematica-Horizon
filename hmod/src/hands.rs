@@ -213,6 +213,13 @@ struct Click {
     sneak: bool,
 }
 
+/// On another's server, not a single-player world (one opened to LAN stays ours). The printer
+/// and easy place place blocks on their own, which servers' rules may forbid; no server can
+/// allow them yet, so they only run in single player (registry rule 5).
+pub fn multiplayer(host: &dyn ClientHost) -> bool {
+    host.client_session().client_server().is_some_and(|s| !s.integrated_local)
+}
+
 fn printer_step(h: &mut dyn Hands) {
     let now = now();
     // On a server, the click went out in an earlier tick: give it the player's real look back.
@@ -221,6 +228,10 @@ fn printer_step(h: &mut dyn Hands) {
         h.restore_look();
     }
     let (on, settings) = runtime::with(|s| (s.settings.printer_on && s.slots.iter().any(|x| x.shown) && !s.moving, s.settings.printer));
+    if on && multiplayer(h.host()) {
+        runtime::with(|s| s.printer_note = tr!("printer.single_player"));
+        return;
+    }
     if !on || !h.playing() || now < mind(|m| m.next_print) {
         return;
     }
@@ -408,7 +419,8 @@ fn printer_step(h: &mut dyn Hands) {
 /// Whether easy place has a say right now.
 fn easy_active(h: &dyn Hands) -> bool {
     let (on, shown, moving) = runtime::with(|s| (s.settings.easy_place, s.slots.iter().any(|x| x.shown), s.moving));
-    on && shown && !moving && h.playing() && !h.spectator() && !runtime::tool_held(&World::new(h.host()))
+    on && shown && !moving && h.playing() && !h.spectator() && !multiplayer(h.host())
+        && !runtime::tool_held(&World::new(h.host()))
 }
 
 /// The block the view asks for, for easy place: the player's own two cells can't take one.
